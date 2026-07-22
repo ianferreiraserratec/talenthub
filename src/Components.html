@@ -9,6 +9,86 @@
   <div class="modal-footer"><button class="button button-ghost" data-close-dialog="talent-detail-dialog">Fechar</button><button class="button button-primary" id="talent-detail-edit">Editar dados profissionais</button></div>
 </dialog>
 
+<dialog class="modal modal-wide" id="matching-model-dialog">
+  <form id="matching-model-form">
+    <div class="modal-header"><div><p class="eyebrow">Configuração no-code</p><h2>Modelo de score</h2></div><button type="button" class="icon-button" data-close-dialog="matching-model-dialog" aria-label="Fechar">×</button></div>
+    <div class="modal-body form-stack">
+      <div class="form-grid two-columns">
+        <label><span>ID do modelo *</span><input name="modelo_id" required></label>
+        <label><span>Nome *</span><input name="nome_modelo" required></label>
+        <label><span>Versão</span><input name="versao" value="1.0"></label>
+        <label><span>Score mínimo recomendado</span><input name="score_minimo_recomendado" type="number" min="0" max="100" value="60"></label>
+      </div>
+      <label><span>Descrição</span><textarea name="descricao" rows="2"></textarea></label>
+      <div class="checkbox-grid">
+        <label class="check-field"><input type="checkbox" name="ativo" checked><span>Modelo ativo</span></label>
+        <label class="check-field"><input type="checkbox" name="normalizar_para_100" checked><span>Normalizar score para 100</span></label>
+      </div>
+      <div class="subsection-heading"><div><h3>Composição do score</h3><p>Os pesos ativos formam a nota-base. A soma pode ser diferente de 100.</p></div><button type="button" class="button button-ghost" id="matching-add-model-criterion">Adicionar critério</button></div>
+      <div class="rule-editor-list" id="matching-model-criteria-list"></div>
+    </div>
+    <div class="modal-footer"><button type="button" class="button button-ghost" data-close-dialog="matching-model-dialog">Cancelar</button><button type="submit" class="button button-primary">Salvar modelo</button></div>
+  </form>
+</dialog>
+
+<dialog class="modal modal-wide" id="vacancy-criteria-dialog">
+  <form id="vacancy-criteria-form">
+    <div class="modal-header"><div><p class="eyebrow">Regras específicas</p><h2 id="vacancy-criteria-title">Critérios da vaga</h2></div><button type="button" class="icon-button" data-close-dialog="vacancy-criteria-dialog" aria-label="Fechar">×</button></div>
+    <div class="modal-body form-stack">
+      <input type="hidden" name="vaga_id">
+      <div class="info-callout"><strong>Exclusivo/Obrigatório</strong> elimina quem não atende. <strong>Prioritário/Desejável</strong> adiciona peso ao score. <strong>Informativo</strong> só aparece na justificativa.</div>
+      <div class="subsection-heading"><div><h3>Critérios configurados</h3><p>Dados sensíveis só influenciam o ranking quando declarados aqui.</p></div><button type="button" class="button button-ghost" id="matching-add-vacancy-criterion">Adicionar critério</button></div>
+      <div class="rule-editor-list" id="vacancy-criteria-list"></div>
+    </div>
+    <div class="modal-footer"><button type="button" class="button button-ghost" data-close-dialog="vacancy-criteria-dialog">Cancelar</button><button type="submit" class="button button-primary">Salvar critérios</button></div>
+  </form>
+</dialog>
+
+<dialog class="modal" id="create-shortlist-dialog">
+  <form id="create-shortlist-form">
+    <div class="modal-header"><div><p class="eyebrow">Curadoria</p><h2>Criar shortlist</h2></div><button type="button" class="icon-button" data-close-dialog="create-shortlist-dialog" aria-label="Fechar">×</button></div>
+    <div class="modal-body form-stack">
+      <input type="hidden" name="vaga_id"><input type="hidden" name="result_ids">
+      <div class="info-callout" id="create-shortlist-summary"></div>
+      <label><span>Título</span><input name="titulo_shortlist" required></label>
+      <div class="form-grid two-columns">
+        <label><span>Rodada</span><input name="rodada" type="number" min="1" value="1"></label>
+        <label><span>Responsável</span><input name="responsavel"></label>
+      </div>
+      <label><span>Observações</span><textarea name="observacoes" rows="3"></textarea></label>
+    </div>
+    <div class="modal-footer"><button type="button" class="button button-ghost" data-close-dialog="create-shortlist-dialog">Cancelar</button><button type="submit" class="button button-primary">Criar shortlist</button></div>
+  </form>
+</dialog>
+
+<dialog class="modal modal-wide" id="process-dialog">
+  <form id="process-form">
+    <div class="modal-header"><div><p class="eyebrow">Processo candidato–vaga</p><h2 id="process-dialog-title">Atualizar etapa</h2></div><button type="button" class="icon-button" data-close-dialog="process-dialog" aria-label="Fechar">×</button></div>
+    <div class="modal-body form-stack">
+      <input type="hidden" name="processo_id">
+      <div class="info-callout" id="process-dialog-summary"></div>
+      <div class="form-grid two-columns">
+        <label><span>Nova etapa *</span><select name="status_processo" id="process-status-select" required><option>Pré-selecionado</option><option>Aguardando confirmação</option><option>Bloqueado</option><option>Enviado à empresa</option><option>Aguardando retorno</option><option>Entrevista</option><option>Proposta</option><option>Contratado</option><option>Recusado pela empresa</option><option>Recusado pelo candidato</option><option>Liberado</option><option>Substituído</option></select></label>
+        <label><span>Data da etapa</span><input name="data_resultado" type="date"></label>
+      </div>
+      <label><span>Motivo de recusa/liberação</span><input name="motivo"></label>
+      <label><span>Observações do processo</span><textarea name="observacoes_processo" rows="3"></textarea></label>
+      <div class="hire-fields hidden" id="process-hire-fields">
+        <div class="subsection-heading"><div><h3>Dados da contratação</h3><p>Preencha quando a etapa for Contratado.</p></div></div>
+        <div class="form-grid two-columns">
+          <label><span>Data da contratação</span><input name="data_contratacao" type="date"></label>
+          <label><span>Início do trabalho</span><input name="data_inicio_trabalho" type="date"></label>
+          <label><span>Tipo de contratação</span><input name="tipo_contratacao"></label>
+          <label><span>Salário</span><input name="salario_contratacao" type="number" min="0" step="0.01"></label>
+          <label><span>Status da contratação</span><select name="status_contratacao"><option>Em acompanhamento</option><option>Ativa</option><option>Encerrada antes de 3 meses</option><option>Encerrada após 3 meses</option><option>Substituída</option></select></label>
+          <label><span>Garantia de substituição até</span><input name="garantia_substituicao_ate" type="date"></label>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer"><button type="button" class="button button-ghost" data-close-dialog="process-dialog">Cancelar</button><button type="submit" class="button button-primary">Salvar etapa</button></div>
+  </form>
+</dialog>
+
 <dialog class="modal" id="talent-form-dialog">
   <form id="talent-form">
     <div class="modal-header"><div><p class="eyebrow">Camada Talent Hub</p><h2>Editar perfil profissional</h2></div><button type="button" class="icon-button" data-close-dialog="talent-form-dialog" aria-label="Fechar">×</button></div>

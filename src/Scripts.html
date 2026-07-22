@@ -7,6 +7,13 @@
     talents: [],
     clients: [],
     jobs: [],
+    matchingSetup: null,
+    matchingResults: null,
+    matchingModelCriteria: [],
+    vacancyCriteria: [],
+    shortlists: [],
+    currentShortlistId: '',
+    currentShortlist: null,
     currentTalentId: '',
     busyCount: 0,
     started: false
@@ -60,7 +67,7 @@
     return new Promise((resolve, reject) => {
       const longRunningMethods = [
         'setupTalentHubDatabase', 'syncAll', 'syncPessoas', 'syncMatriculas',
-        'regenerateTalentView', 'regenerateDashboard'
+        'regenerateTalentView', 'regenerateDashboard', 'runMatching'
       ];
       const timeoutMs = longRunningMethods.includes(method) ? 330000 : 45000;
       let settled = false;
@@ -118,6 +125,8 @@
       if (route === 'talentos') await loadTalents();
       if (route === 'clientes') await loadClients();
       if (route === 'vagas') await loadJobs();
+      if (route === 'matchmaking') await loadMatching();
+      if (route === 'shortlists') await loadShortlists();
       if (route === 'integracoes') await loadIntegrations();
       if (route === 'audit') await loadAuditLogs();
     } catch (error) {
@@ -313,6 +322,317 @@
     select.value = current;
   }
 
+  async function loadMatching(vagaId) {
+    const selectedBefore = vagaId || (document.getElementById('matching-job-select') || {}).value || '';
+    const setup = await server('getMatchingSetup', selectedBefore);
+    App.matchingSetup = setup;
+    const jobSelect = document.getElementById('matching-job-select');
+    jobSelect.innerHTML = '<option value="">Selecione uma vaga</option>' + (setup.vagas || []).map(job => `<option value="${escapeAttr(job.vaga_id)}">${escapeHtml(job.titulo_vaga)}${job.nome_empresa ? ` · ${escapeHtml(job.nome_empresa)}` : ''}</option>`).join('');
+    jobSelect.value = setup.vaga_id || selectedBefore;
+    const modelSelect = document.getElementById('matching-model-select');
+    const currentModel = modelSelect.value;
+    modelSelect.innerHTML = '<option value="">Selecione um modelo</option>' + (setup.modelos || []).filter(model => isYes(model.ativo)).map(model => `<option value="${escapeAttr(model.modelo_id)}">${escapeHtml(model.nome_modelo)} · v${escapeHtml(model.versao || '1.0')}</option>`).join('');
+    modelSelect.value = currentModel && (setup.modelos || []).some(model => model.modelo_id === currentModel) ? currentModel : ((setup.modelos || [])[0] || {}).modelo_id || '';
+    App.vacancyCriteria = setup.criterios_vaga || [];
+    renderMatchingCriteriaSummary();
+    renderMatchingRuns(setup.execucoes || []);
+  }
+
+  function renderMatchingCriteriaSummary() {
+    const container = document.getElementById('matching-criteria-summary');
+    const jobId = document.getElementById('matching-job-select').value;
+    const job = ((App.matchingSetup || {}).vagas || []).find(item => item.vaga_id === jobId);
+    if (!job) {
+      container.innerHTML = '<strong>Nenhuma vaga selecionada</strong><span>Selecione uma vaga para conferir suas regras exclusivas e prioritárias.</span>';
+      return;
+    }
+    const criteria = App.vacancyCriteria || [];
+    const eliminatory = criteria.filter(item => ['Exclusivo', 'Obrigatório'].includes(item.tipo_regra)).length;
+    const weighted = criteria.filter(item => ['Prioritário', 'Desejável'].includes(item.tipo_regra)).length;
+    container.innerHTML = `<strong>${escapeHtml(job.titulo_vaga)}</strong><span>${criteria.length} critério${criteria.length === 1 ? '' : 's'} específico${criteria.length === 1 ? '' : 's'} · ${eliminatory} eliminatório${eliminatory === 1 ? '' : 's'} · ${weighted} com peso.</span>`;
+  }
+
+  function renderMatchingRuns(items) {
+    const list = document.getElementById('matching-run-list');
+    document.getElementById('matching-runs-empty').classList.toggle('hidden', items.length > 0);
+    list.innerHTML = items.map(run => `
+      <button class="matching-run-card${App.matchingResults && App.matchingResults.run && App.matchingResults.run.run_id === run.run_id ? ' active' : ''}" data-run-id="${escapeAttr(run.run_id)}">
+        <strong>${formatDateTime(run.executado_em)}</strong><span class="status-badge ${statusClass(run.status_run)}">${escapeHtml(run.status_run)}</span>
+        <small>${formatNumber(run.total_talentos_avaliados)} avaliados · ${formatNumber(run.total_recomendados)} recomendados · modelo ${escapeHtml(run.modelo_id)}</small>
+      </button>`).join('');
+  }
+
+  async function runMatchingFromUi() {
+    const jobId = document.getElementById('matching-job-select').value;
+    const modelId = document.getElementById('matching-model-select').value;
+    const profileCount = Number(document.getElementById('matching-profile-count').value || 5);
+    if (!jobId) return notify('Selecione uma vaga.', 'error');
+    if (!modelId) return notify('Selecione um modelo de score.', 'error');
+    setBusy(true, 'Calculando aderência dos talentos…');
+    try {
+      const data = await server('runMatching', jobId, profileCount, modelId);
+      App.matchingResults = data;
+      renderMatchingResults(data);
+      await loadMatching(jobId);
+      notify('Matchmaking concluído.');
+    } catch (error) { notify(error.message, 'error'); }
+    finally { setBusy(false); }
+  }
+
+  async function loadMatchingResult(runId) {
+    setBusy(true, 'Carregando ranking…');
+    try {
+      const data = await server('getMatchingResults', runId);
+      App.matchingResults = data;
+      renderMatchingResults(data);
+      renderMatchingRuns((App.matchingSetup || {}).execucoes || []);
+    } catch (error) { notify(error.message, 'error'); }
+    finally { setBusy(false); }
+  }
+
+  function renderMatchingResults(data) {
+    const results = (data && data.resultados) || [];
+    const run = (data && data.run) || {};
+    const body = document.getElementById('matching-results-body');
+    document.getElementById('matching-results-empty').classList.toggle('hidden', results.length > 0);
+    document.getElementById('matching-create-shortlist-button').classList.add('hidden');
+    document.getElementById('matching-select-all').checked = false;
+    text('matching-results-title', data && data.vaga ? data.vaga.titulo_vaga : 'Resultado do ranking');
+    text('matching-results-summary', results.length ? `${results.length} talentos avaliados · ${formatNumber(run.total_recomendados)} recomendados · ${formatDateTime(run.executado_em)}` : 'Nenhum resultado nesta execução.');
+    body.innerHTML = results.map(result => {
+      const selectable = result.status_resultado !== 'Selecionado para shortlist' && result.recomendado === 'SIM';
+      const excluded = !!result.criterios_exclusao;
+      return `<tr>
+        <td><input class="matching-result-check" type="checkbox" value="${escapeAttr(result.resultado_id)}" ${selectable ? '' : 'disabled'} aria-label="Selecionar ${escapeAttr(result.nome)}"></td>
+        <td><strong>#${formatNumber(result.ordem_ranking)}</strong></td>
+        <td><div class="primary-cell"><strong>${escapeHtml(result.nome || result.pessoa_id)}</strong><small>${escapeHtml([result.area_interesse_principal, result.senioridade, result.cidade, result.uf].filter(Boolean).join(' · '))}</small></div></td>
+        <td><span class="score-pill">${Number(result.score_total || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}</span></td>
+        <td><div class="criteria-text">${escapeHtml(result.justificativa || 'Sem justificativa.')}<small>${result.criterios_nao_atendidos ? `Não atende: ${escapeHtml(result.criterios_nao_atendidos)}` : ''}</small></div></td>
+        <td><span class="status-badge ${excluded ? 'status-negative' : statusClass(result.status_resultado)}">${escapeHtml(excluded ? 'Eliminado' : result.status_resultado)}</span></td>
+      </tr>`;
+    }).join('');
+  }
+
+  function updateMatchingSelection() {
+    const selected = [...document.querySelectorAll('.matching-result-check:checked')];
+    const button = document.getElementById('matching-create-shortlist-button');
+    button.classList.toggle('hidden', selected.length === 0);
+    button.textContent = selected.length ? `Criar shortlist com ${selected.length} selecionado${selected.length === 1 ? '' : 's'}` : 'Criar shortlist com selecionados';
+  }
+
+  function openMatchingModelDialog() {
+    const setup = App.matchingSetup || {};
+    const selectedId = document.getElementById('matching-model-select').value;
+    const model = (setup.modelos || []).find(item => item.modelo_id === selectedId) || (setup.modelos || [])[0] || {};
+    const form = document.getElementById('matching-model-form');
+    form.reset();
+    fillForm(form, model);
+    form.elements.ativo.checked = valueAsBoolean(model.ativo, true);
+    form.elements.normalizar_para_100.checked = valueAsBoolean(model.normalizar_para_100, true);
+    App.matchingModelCriteria = (model.criterios || []).map(item => Object.assign({}, item));
+    renderModelCriteriaEditor();
+    document.getElementById('matching-model-dialog').showModal();
+  }
+
+  function renderModelCriteriaEditor() {
+    const container = document.getElementById('matching-model-criteria-list');
+    if (!App.matchingModelCriteria.length) container.innerHTML = '<div class="empty-state compact-empty"><p>Adicione pelo menos um critério para compor o score.</p></div>';
+    else container.innerHTML = App.matchingModelCriteria.map((criterion, index) => `
+      <div class="rule-row" data-index="${index}">
+        <label><span>Critério</span><input data-field="criterio_nome" value="${escapeAttr(criterion.criterio_nome || '')}" required></label>
+        <label><span>Campo do talento</span><select data-field="campo_talento">${matchingTalentFieldOptions(criterion.campo_talento)}</select></label>
+        <label><span>Campo da vaga</span><input data-field="campo_vaga" value="${escapeAttr(criterion.campo_vaga || '')}" placeholder="area_vaga" required></label>
+        <label><span>Comparação</span><select data-field="tipo_comparacao">${optionList(['igual', 'contem', 'intersecao_lista', 'salario_compativel'], criterion.tipo_comparacao)}</select></label>
+        <label><span>Peso</span><input data-field="peso" type="number" min="0" value="${escapeAttr(criterion.peso == null ? 0 : criterion.peso)}"></label>
+        <button type="button" class="icon-button rule-remove model-rule-remove" aria-label="Remover critério">×</button>
+      </div>`).join('');
+  }
+
+  function collectModelCriteria() {
+    return [...document.querySelectorAll('#matching-model-criteria-list .rule-row')].map((row, index) => {
+      const original = App.matchingModelCriteria[index] || {};
+      const item = Object.assign({}, original);
+      row.querySelectorAll('[data-field]').forEach(field => { item[field.dataset.field] = field.value.trim(); });
+      item.modo = item.modo || 'pontuacao';
+      item.ativo = 'SIM';
+      return item;
+    });
+  }
+
+  function openVacancyCriteriaDialog() {
+    const jobId = document.getElementById('matching-job-select').value;
+    if (!jobId) return notify('Selecione uma vaga.', 'error');
+    const job = ((App.matchingSetup || {}).vagas || []).find(item => item.vaga_id === jobId) || {};
+    const form = document.getElementById('vacancy-criteria-form');
+    form.elements.vaga_id.value = jobId;
+    text('vacancy-criteria-title', `Critérios · ${job.titulo_vaga || jobId}`);
+    App.vacancyCriteria = (App.vacancyCriteria || []).map(item => Object.assign({}, item));
+    renderVacancyCriteriaEditor();
+    document.getElementById('vacancy-criteria-dialog').showModal();
+  }
+
+  function renderVacancyCriteriaEditor() {
+    const container = document.getElementById('vacancy-criteria-list');
+    if (!App.vacancyCriteria.length) container.innerHTML = '<div class="empty-state compact-empty"><p>Sem regra específica: apenas o modelo-base será usado.</p></div>';
+    else container.innerHTML = App.vacancyCriteria.map((criterion, index) => `
+      <div class="rule-row rule-row-vacancy" data-index="${index}">
+        <label><span>Critério</span><input data-field="criterio_nome" value="${escapeAttr(criterion.criterio_nome || '')}" required></label>
+        <label><span>Campo do talento</span><select data-field="campo_talento">${matchingTalentFieldOptions(criterion.campo_talento)}</select></label>
+        <label><span>Regra</span><select data-field="tipo_regra">${optionList(['Exclusivo', 'Obrigatório', 'Prioritário', 'Desejável', 'Informativo'], criterion.tipo_regra)}</select></label>
+        <label><span>Operador</span><select data-field="operador">${optionList(['igual', 'diferente', 'contem', 'nao_contem', 'intersecao_lista', 'maior_igual', 'menor_igual', 'entre', 'vazio', 'nao_vazio'], criterion.operador)}</select></label>
+        <label><span>Valor esperado</span><input data-field="valor_esperado" value="${escapeAttr(criterion.valor_esperado || '')}"></label>
+        <label><span>Peso</span><input data-field="peso_override" type="number" min="0" value="${escapeAttr(criterion.peso_override || '')}"></label>
+        <button type="button" class="icon-button rule-remove vacancy-rule-remove" aria-label="Remover critério">×</button>
+      </div>`).join('');
+  }
+
+  function collectVacancyCriteria() {
+    return [...document.querySelectorAll('#vacancy-criteria-list .rule-row')].map((row, index) => {
+      const original = App.vacancyCriteria[index] || {};
+      const item = Object.assign({}, original);
+      row.querySelectorAll('[data-field]').forEach(field => { item[field.dataset.field] = field.value.trim(); });
+      item.ativo = 'SIM';
+      return item;
+    });
+  }
+
+  function matchingTalentFieldOptions(selected) {
+    return ((App.matchingSetup || {}).campos_talento || []).map(field => `<option value="${escapeAttr(field.valor)}" ${field.valor === selected ? 'selected' : ''}>${escapeHtml(field.descricao)}</option>`).join('');
+  }
+
+  function optionList(values, selected) {
+    return values.map(value => `<option value="${escapeAttr(value)}" ${String(value) === String(selected || '') ? 'selected' : ''}>${escapeHtml(value)}</option>`).join('');
+  }
+
+  function openCreateShortlistDialog() {
+    const selected = [...document.querySelectorAll('.matching-result-check:checked')].map(input => input.value);
+    if (!selected.length || !App.matchingResults) return notify('Selecione talentos recomendados.', 'error');
+    const form = document.getElementById('create-shortlist-form');
+    form.reset();
+    const job = App.matchingResults.vaga || {};
+    form.elements.vaga_id.value = job.vaga_id || '';
+    form.elements.result_ids.value = selected.join(',');
+    form.elements.rodada.value = Number(job.rodada_atual || 1);
+    form.elements.titulo_shortlist.value = `Shortlist — ${job.titulo_vaga || 'Vaga'} — rodada ${form.elements.rodada.value}`;
+    text('create-shortlist-summary', `${selected.length} talento${selected.length === 1 ? '' : 's'} selecionado${selected.length === 1 ? '' : 's'} para ${job.titulo_vaga || 'a vaga'}.`);
+    document.getElementById('create-shortlist-dialog').showModal();
+  }
+
+  async function loadShortlists(preferredId) {
+    const items = await server('getShortlists', {
+      search: document.getElementById('shortlists-search').value,
+      status: document.getElementById('shortlists-status').value
+    });
+    App.shortlists = items || [];
+    text('shortlists-count', `${items.length} shortlist${items.length === 1 ? '' : 's'}`);
+    renderShortlistList(items);
+    const targetId = preferredId || App.currentShortlistId;
+    if (targetId && items.some(item => item.shortlist_id === targetId)) await openShortlistDetail(targetId, true);
+    else if (items.length && !App.currentShortlistId) await openShortlistDetail(items[0].shortlist_id, true);
+    else if (!items.length) clearShortlistDetail();
+  }
+
+  function renderShortlistList(items) {
+    const container = document.getElementById('shortlist-list');
+    document.getElementById('shortlists-empty').classList.toggle('hidden', items.length > 0);
+    container.innerHTML = items.map(item => `
+      <button class="shortlist-card${item.shortlist_id === App.currentShortlistId ? ' active' : ''}" data-shortlist-id="${escapeAttr(item.shortlist_id)}">
+        <span class="shortlist-card-top"><strong>${escapeHtml(item.titulo_shortlist || item.titulo_vaga)}</strong><span class="status-badge ${statusClass(item.status_shortlist)}">${escapeHtml(item.status_shortlist)}</span></span>
+        <small>${escapeHtml(item.nome_empresa || '')} · ${formatNumber(item.qtd_candidatos)} talentos · rodada ${formatNumber(item.rodada)}</small>
+        <small>${formatDateTime(item.criada_em)}</small>
+      </button>`).join('');
+  }
+
+  async function openShortlistDetail(shortlistId, quiet) {
+    if (!quiet) setBusy(true, 'Carregando shortlist…');
+    try {
+      const data = await server('getShortlistDetails', shortlistId);
+      App.currentShortlistId = shortlistId;
+      App.currentShortlist = data;
+      renderShortlistList(App.shortlists);
+      renderShortlistDetail(data);
+    } catch (error) { notify(error.message, 'error'); }
+    finally { if (!quiet) setBusy(false); }
+  }
+
+  function clearShortlistDetail() {
+    App.currentShortlistId = '';
+    App.currentShortlist = null;
+    document.getElementById('shortlist-detail-empty').classList.remove('hidden');
+    document.getElementById('shortlist-detail-content').classList.add('hidden');
+  }
+
+  function renderShortlistDetail(data) {
+    const shortlist = data.shortlist || {};
+    const job = data.vaga || {};
+    const client = data.cliente || {};
+    document.getElementById('shortlist-detail-empty').classList.add('hidden');
+    document.getElementById('shortlist-detail-content').classList.remove('hidden');
+    text('shortlist-detail-company', client.nome_empresa || 'Cliente não informado');
+    text('shortlist-detail-title', shortlist.titulo_shortlist || job.titulo_vaga || 'Shortlist');
+    text('shortlist-detail-meta', `${job.titulo_vaga || 'Vaga'} · rodada ${shortlist.rodada || 1} · criada em ${formatDateTime(shortlist.criada_em)}`);
+    document.getElementById('shortlist-detail-status').value = shortlist.status_shortlist || 'Em montagem';
+    const body = document.getElementById('shortlist-items-body');
+    body.innerHTML = (data.itens || []).map(item => {
+      const process = item.processo || {};
+      return `<tr>
+        <td><strong>#${formatNumber(item.ordem_recomendacao)}</strong></td>
+        <td><div class="primary-cell"><strong>${escapeHtml(item.nome || item.pessoa_id)}</strong><small>${escapeHtml([item.area_interesse_principal, item.senioridade, item.cidade, item.uf].filter(Boolean).join(' · '))}</small></div></td>
+        <td><span class="score-pill">${Number(item.score_total || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}</span></td>
+        <td><span class="status-badge ${statusClass(process.status_processo)}">${escapeHtml(process.status_processo || '—')}</span></td>
+        <td><div class="primary-cell"><span>${process.data_envio_empresa ? `Enviado ${formatDateTime(process.data_envio_empresa)}` : 'Ainda não enviado'}</span><small>${process.data_resultado ? `Resultado ${formatDateTime(process.data_resultado)}` : ''}</small></div></td>
+        <td><button class="table-action process-edit" data-process-id="${escapeAttr(item.processo_id)}">Atualizar</button> ${process.status_processo === 'Contratado' ? '' : `<button class="table-action shortlist-item-remove" data-item-id="${escapeAttr(item.shortlist_item_id)}">Remover</button>`}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  function openProcessDialog(processId) {
+    const item = (((App.currentShortlist || {}).itens) || []).find(row => row.processo_id === processId);
+    if (!item) return notify('Processo não encontrado nesta shortlist.', 'error');
+    const process = item.processo || {};
+    const form = document.getElementById('process-form');
+    form.reset();
+    fillForm(form, process);
+    form.elements.processo_id.value = processId;
+    form.elements.status_processo.value = process.status_processo || 'Pré-selecionado';
+    text('process-dialog-title', `Atualizar · ${item.nome || item.pessoa_id}`);
+    text('process-dialog-summary', `${item.nome || item.pessoa_id} · ${((App.currentShortlist || {}).vaga || {}).titulo_vaga || ''} · etapa atual: ${process.status_processo || '—'}.`);
+    toggleHireFields();
+    document.getElementById('process-dialog').showModal();
+  }
+
+  function toggleHireFields() {
+    const status = document.getElementById('process-status-select').value;
+    document.getElementById('process-hire-fields').classList.toggle('hidden', status !== 'Contratado');
+  }
+
+  async function updateCurrentShortlistStatus() {
+    if (!App.currentShortlistId) return notify('Selecione uma shortlist.', 'error');
+    const newStatus = document.getElementById('shortlist-detail-status').value;
+    const currentStatus = ((App.currentShortlist || {}).shortlist || {}).status_shortlist;
+    if (newStatus === currentStatus) return notify('A shortlist já está nesse status.');
+    setBusy(true, 'Atualizando shortlist e processos…');
+    try {
+      const data = await server('updateShortlistStatus', App.currentShortlistId, newStatus, {});
+      App.currentShortlist = data;
+      await Promise.all([loadShortlists(App.currentShortlistId), loadDashboard()]);
+      notify('Status da shortlist atualizado.');
+    } catch (error) { notify(error.message, 'error'); }
+    finally { setBusy(false); }
+  }
+
+  async function removeCurrentShortlistItem(itemId) {
+    const reason = window.prompt('Informe o motivo da remoção/liberação:') || '';
+    if (!reason) return;
+    setBusy(true, 'Liberando talento…');
+    try {
+      App.currentShortlist = await server('removeShortlistItem', itemId, { motivo: reason });
+      await Promise.all([loadShortlists(App.currentShortlistId), loadDashboard()]);
+      notify('Talento removido e liberado.');
+    } catch (error) { notify(error.message, 'error'); }
+    finally { setBusy(false); }
+  }
+
   async function loadIntegrations() {
     const [config, status] = await Promise.all([server('getRuntimeConfig'), App.initialized ? server('getSyncStatus') : Promise.resolve({ latest: [] })]);
     fillConfigForm(config);
@@ -354,6 +674,8 @@
     document.getElementById('clientes-status').addEventListener('change', loadClients);
     document.getElementById('vagas-search').addEventListener('input', debounce(loadJobs, 300));
     document.getElementById('vagas-status').addEventListener('change', loadJobs);
+    document.getElementById('shortlists-search').addEventListener('input', debounce(loadShortlists, 300));
+    document.getElementById('shortlists-status').addEventListener('change', () => loadShortlists());
     document.getElementById('audit-search').addEventListener('input', debounce(loadAuditLogs, 300));
     document.getElementById('audit-date-from').addEventListener('change', loadAuditLogs);
     document.getElementById('audit-date-to').addEventListener('change', loadAuditLogs);
@@ -395,6 +717,64 @@
     document.getElementById('talentos-sync-button').addEventListener('click', () => runSync('syncPessoas', 'Sincronizando pessoas…'));
     document.getElementById('sync-registrations-button').addEventListener('click', () => runSync('syncMatriculas', 'Sincronizando matrículas…'));
     document.getElementById('rebuild-views-button').addEventListener('click', rebuildViews);
+    document.getElementById('matching-job-select').addEventListener('change', event => {
+      App.matchingResults = null;
+      renderMatchingResults(null);
+      loadMatching(event.target.value);
+    });
+    document.getElementById('matching-run-button').addEventListener('click', runMatchingFromUi);
+    document.getElementById('matching-edit-model-button').addEventListener('click', openMatchingModelDialog);
+    document.getElementById('matching-vacancy-criteria-button').addEventListener('click', openVacancyCriteriaDialog);
+    document.getElementById('matching-create-shortlist-button').addEventListener('click', openCreateShortlistDialog);
+    document.getElementById('matching-run-list').addEventListener('click', event => {
+      const card = event.target.closest('[data-run-id]');
+      if (card) loadMatchingResult(card.dataset.runId);
+    });
+    document.getElementById('matching-results-body').addEventListener('change', event => {
+      if (event.target.classList.contains('matching-result-check')) updateMatchingSelection();
+    });
+    document.getElementById('matching-select-all').addEventListener('change', event => {
+      document.querySelectorAll('.matching-result-check:not(:disabled)').forEach(input => { input.checked = event.target.checked; });
+      updateMatchingSelection();
+    });
+    document.getElementById('matching-add-model-criterion').addEventListener('click', () => {
+      App.matchingModelCriteria = collectModelCriteria();
+      App.matchingModelCriteria.push({ criterio_nome: '', campo_talento: 'area_interesse_principal', campo_vaga: 'area_vaga', tipo_comparacao: 'igual', peso: 10, modo: 'pontuacao', ativo: 'SIM' });
+      renderModelCriteriaEditor();
+    });
+    document.getElementById('matching-model-criteria-list').addEventListener('click', event => {
+      const button = event.target.closest('.model-rule-remove');
+      if (!button) return;
+      const index = Number(button.closest('.rule-row').dataset.index);
+      App.matchingModelCriteria = collectModelCriteria();
+      App.matchingModelCriteria.splice(index, 1);
+      renderModelCriteriaEditor();
+    });
+    document.getElementById('matching-add-vacancy-criterion').addEventListener('click', () => {
+      App.vacancyCriteria = collectVacancyCriteria();
+      App.vacancyCriteria.push({ criterio_nome: '', campo_talento: 'area_interesse_principal', tipo_regra: 'Prioritário', operador: 'igual', valor_esperado: '', peso_override: 10, ativo: 'SIM' });
+      renderVacancyCriteriaEditor();
+    });
+    document.getElementById('vacancy-criteria-list').addEventListener('click', event => {
+      const button = event.target.closest('.vacancy-rule-remove');
+      if (!button) return;
+      const index = Number(button.closest('.rule-row').dataset.index);
+      App.vacancyCriteria = collectVacancyCriteria();
+      App.vacancyCriteria.splice(index, 1);
+      renderVacancyCriteriaEditor();
+    });
+    document.getElementById('shortlist-list').addEventListener('click', event => {
+      const card = event.target.closest('[data-shortlist-id]');
+      if (card) openShortlistDetail(card.dataset.shortlistId);
+    });
+    document.getElementById('shortlist-save-status-button').addEventListener('click', updateCurrentShortlistStatus);
+    document.getElementById('shortlist-items-body').addEventListener('click', event => {
+      const processButton = event.target.closest('.process-edit');
+      if (processButton) return openProcessDialog(processButton.dataset.processId);
+      const removeButton = event.target.closest('.shortlist-item-remove');
+      if (removeButton) removeCurrentShortlistItem(removeButton.dataset.itemId);
+    });
+    document.getElementById('process-status-select').addEventListener('change', toggleHireFields);
   }
 
   function bindForms() {
@@ -448,6 +828,70 @@
         event.currentTarget.closest('dialog').close();
         await Promise.all([loadJobs(), loadDashboard()]);
         notify('Vaga salva com sucesso.');
+      } catch (error) { notify(error.message, 'error'); }
+      finally { setBusy(false); }
+    });
+
+    document.getElementById('matching-model-form').addEventListener('submit', async event => {
+      event.preventDefault();
+      const payload = formToObject(event.currentTarget);
+      payload.ativo = event.currentTarget.elements.ativo.checked ? 'SIM' : 'NAO';
+      payload.normalizar_para_100 = event.currentTarget.elements.normalizar_para_100.checked ? 'SIM' : 'NAO';
+      const criteria = collectModelCriteria();
+      if (!criteria.length) return notify('Adicione ao menos um critério ao modelo.', 'error');
+      setBusy(true, 'Salvando modelo de score…');
+      try {
+        await server('saveMatchingModel', payload, criteria);
+        event.currentTarget.closest('dialog').close();
+        await loadMatching(document.getElementById('matching-job-select').value);
+        document.getElementById('matching-model-select').value = payload.modelo_id;
+        notify('Modelo de score salvo.');
+      } catch (error) { notify(error.message, 'error'); }
+      finally { setBusy(false); }
+    });
+
+    document.getElementById('vacancy-criteria-form').addEventListener('submit', async event => {
+      event.preventDefault();
+      const jobId = event.currentTarget.elements.vaga_id.value;
+      const criteria = collectVacancyCriteria();
+      setBusy(true, 'Salvando critérios da vaga…');
+      try {
+        App.vacancyCriteria = await server('saveVagaCriterios', jobId, criteria);
+        event.currentTarget.closest('dialog').close();
+        renderMatchingCriteriaSummary();
+        notify('Critérios da vaga salvos.');
+      } catch (error) { notify(error.message, 'error'); }
+      finally { setBusy(false); }
+    });
+
+    document.getElementById('create-shortlist-form').addEventListener('submit', async event => {
+      event.preventDefault();
+      const payload = formToObject(event.currentTarget);
+      const resultIds = String(payload.result_ids || '').split(',').filter(Boolean);
+      setBusy(true, 'Criando shortlist e processos…');
+      try {
+        const created = await server('createShortlistFromResults', payload.vaga_id, resultIds, payload);
+        event.currentTarget.closest('dialog').close();
+        notify('Shortlist criada com sucesso.');
+        activateRoute('shortlists');
+        await loadShortlists(created.shortlist.shortlist_id);
+      } catch (error) { notify(error.message, 'error'); }
+      finally { setBusy(false); }
+    });
+
+    document.getElementById('process-form').addEventListener('submit', async event => {
+      event.preventDefault();
+      const payload = formToObject(event.currentTarget);
+      const processId = payload.processo_id;
+      const newStatus = payload.status_processo;
+      delete payload.processo_id;
+      delete payload.status_processo;
+      setBusy(true, 'Atualizando processo…');
+      try {
+        await server('updateProcessoStatus', processId, newStatus, payload);
+        event.currentTarget.closest('dialog').close();
+        await Promise.all([openShortlistDetail(App.currentShortlistId, true), loadDashboard()]);
+        notify('Etapa do processo atualizada.');
       } catch (error) { notify(error.message, 'error'); }
       finally { setBusy(false); }
     });
@@ -580,6 +1024,7 @@
     return `<a href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`;
   }
   function isYes(value) { return ['sim', 'true', '1', 'ativo'].includes(String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()); }
+  function valueAsBoolean(value, fallback) { const normalized = String(value == null ? '' : value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); return normalized ? ['sim', 'true', '1', 'ativo'].includes(normalized) : !!fallback; }
   function escapeHtml(value) { return String(value == null ? '' : value).replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char])); }
   function escapeAttr(value) { return escapeHtml(value); }
   function debounce(fn, delay) { let timer; return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), delay); }; }

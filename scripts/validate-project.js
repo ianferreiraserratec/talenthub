@@ -61,6 +61,9 @@ const requiredFunctions = [
   'regenerateTalentView', 'regenerateDashboard', 'getTalentos', 'getTalentoById',
   'updateTalentoTalentHubData', 'getClientes', 'createCliente', 'updateCliente',
   'getVagas', 'createVaga', 'updateVaga', 'getVagaCriterios', 'saveVagaCriterios',
+  'getMatchingSetup', 'getMatchingModels', 'saveMatchingModel', 'runMatching', 'getMatchingResults',
+  'getShortlists', 'getShortlistDetails', 'createShortlistFromResults', 'updateShortlistStatus',
+  'removeShortlistItem', 'getProcessoById', 'updateProcessoStatus', 'registrarContratacao',
   'getDashboard', 'getAuditLogs', 'getSyncStatus'
 ];
 for (const functionName of requiredFunctions) {
