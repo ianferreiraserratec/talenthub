@@ -38,6 +38,10 @@ for (const match of indexHtml.matchAll(/include\('([^']+)'\)/g)) {
 }
 
 const allHtml = htmlFiles.map(file => fs.readFileSync(path.join(source, file), 'utf8')).join('\n');
+assert(
+  /document\.readyState\s*===\s*['"]loading['"]/.test(allHtml),
+  'A inicialização do frontend deve considerar quando DOMContentLoaded já ocorreu.'
+);
 const ids = [...allHtml.matchAll(/(?:\s|<)id="([^"]+)"/g)].map(match => match[1]);
 const duplicateIds = ids.filter((id, index) => ids.indexOf(id) !== index);
 assert(duplicateIds.length === 0, `IDs HTML duplicados: ${[...new Set(duplicateIds)].join(', ')}`);
