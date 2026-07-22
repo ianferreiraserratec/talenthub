@@ -1,0 +1,15 @@
+{
+  "name": "talenthub-serratec",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Talent Hub Serratec em Google Apps Script",
+  "scripts": {
+    "preview": "node scripts/preview-server.js",
+    "validate": "node scripts/validate-project.js",
+    "test:rules": "node tests/rules.test.js",
+    "test": "npm run validate && npm run test:rules"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
