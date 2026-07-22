@@ -42,6 +42,10 @@ assert(
   /document\.readyState\s*===\s*['"]loading['"]/.test(allHtml),
   'A inicialização do frontend deve considerar quando DOMContentLoaded já ocorreu.'
 );
+assert(
+  !/\^https\?\:\\\/\\\//.test(allHtml),
+  'Evite regex de protocolo com barras escapadas em HTML incluído pelo HtmlService.'
+);
 const ids = [...allHtml.matchAll(/(?:\s|<)id="([^"]+)"/g)].map(match => match[1]);
 const duplicateIds = ids.filter((id, index) => ids.indexOf(id) !== index);
 assert(duplicateIds.length === 0, `IDs HTML duplicados: ${[...new Set(duplicateIds)].join(', ')}`);

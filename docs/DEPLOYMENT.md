@@ -29,6 +29,20 @@ clasp open
 
 O arquivo `.clasp.json` é ignorado pelo Git para evitar misturar IDs de homologação e produção. Use um arquivo local distinto em cada ambiente.
 
+## Sincronizar com Google Apps Script GitHub Assistant
+
+A extensão preserva a pasta do repositório no nome dos arquivos do Apps Script, por exemplo `src/Code.gs` e `src/Index.html`. O carregador em `Code.gs` aceita tanto esse formato quanto arquivos enviados pelo Clasp com `rootDir: src`.
+
+Ao puxar uma correção:
+
+1. selecione a branch `homologacao`;
+2. revise o diff antes de sobrescrever o projeto;
+3. salve o projeto no Drive;
+4. atualize a implantação de teste `/dev` com `F5`;
+5. confirme que o rodapé deixou de mostrar `Carregando…` e passou a exibir a versão do app.
+
+Se o HTML aparecer, mas nenhum botão responder, valide primeiro a sintaxe do JavaScript efetivamente servido. Arquivos HTML incluídos pelo `HtmlService` podem sofrer transformação de conteúdo; evite regex de URL com barras escapadas dentro desses templates e prefira `new URL()` para validar protocolos.
+
 ## Publicar o web app
 
 No editor do Apps Script:
@@ -39,6 +53,8 @@ No editor do Apps Script:
 4. permita acesso apenas ao domínio;
 5. valide setup, sincronização, Talentos, Clientes e Vagas;
 6. registre a versão implantada no PR de promoção.
+
+Durante a homologação, prefira a URL `/dev`, que usa o código salvo mais recente e dispensa criar uma nova versão a cada ajuste. A URL `/exec` continua representando uma implantação versionada.
 
 ## Promoção para produção
 

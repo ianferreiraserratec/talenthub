@@ -572,7 +572,11 @@
   }
   function detailItem(label, value, raw) { return `<div class="detail-item"><span>${escapeHtml(label)}</span><strong>${raw ? value : escapeHtml(value || '—')}</strong></div>`; }
   function safeLink(url, label) {
-    if (!url || !/^https?:\/\//i.test(String(url))) return '';
+    try {
+      const parsedUrl = new URL(String(url));
+      if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') return '';
+      url = parsedUrl.href;
+    } catch (error) { return ''; }
     return `<a href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`;
   }
   function isYes(value) { return ['sim', 'true', '1', 'ativo'].includes(String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()); }
