@@ -43,6 +43,10 @@ const duplicateIds = ids.filter((id, index) => ids.indexOf(id) !== index);
 assert(duplicateIds.length === 0, `IDs HTML duplicados: ${[...new Set(duplicateIds)].join(', ')}`);
 
 const allGs = gsFiles.map(file => fs.readFileSync(path.join(source, file), 'utf8')).join('\n');
+assert(
+  !/XFrameOptionsMode\.SAMEORIGIN/.test(allGs),
+  'XFrameOptionsMode.SAMEORIGIN não existe no HtmlService; use DEFAULT ou ALLOWALL.'
+);
 const requiredFunctions = [
   'doGet', 'include', 'setupTalentHubDatabase', 'syncAll', 'syncPessoas', 'syncMatriculas',
   'regenerateTalentView', 'regenerateDashboard', 'getTalentos', 'getTalentoById',
@@ -76,7 +80,7 @@ assert(schema.VW_TALENTOS_APTOS.includes('apto_talent_hub'), 'A visão deve expo
 
 function collectTextFiles(directory) {
   return fs.readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
-    if (entry.name === '.git' || entry.name === 'node_modules') return [];
+    if (entry.name === '.git' || entry.name === 'node_modules' || entry.name === '.clasp.json') return [];
     const target = path.join(directory, entry.name);
     if (entry.isDirectory()) return collectTextFiles(target);
     return /\.(?:gs|html|md|json|js|example)$/.test(entry.name) ? [target] : [];

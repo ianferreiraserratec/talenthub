@@ -4,7 +4,7 @@ function doGet() {
   return template.evaluate()
     .setTitle('Talent Hub Serratec')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.SAMEORIGIN);
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT);
 }
 
 function include(filename) {
