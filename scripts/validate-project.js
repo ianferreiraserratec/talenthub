@@ -48,7 +48,8 @@ assert(
   'XFrameOptionsMode.SAMEORIGIN não existe no HtmlService; use DEFAULT ou ALLOWALL.'
 );
 const requiredFunctions = [
-  'doGet', 'include', 'setupTalentHubDatabase', 'syncAll', 'syncPessoas', 'syncMatriculas',
+  'doGet', 'include', 'createTemplateFromProjectFile_', 'createHtmlOutputFromProjectFile_',
+  'setupTalentHubDatabase', 'syncAll', 'syncPessoas', 'syncMatriculas',
   'regenerateTalentView', 'regenerateDashboard', 'getTalentos', 'getTalentoById',
   'updateTalentoTalentHubData', 'getClientes', 'createCliente', 'updateCliente',
   'getVagas', 'createVaga', 'updateVaga', 'getVagaCriterios', 'saveVagaCriterios',

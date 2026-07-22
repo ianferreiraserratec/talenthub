@@ -1,5 +1,5 @@
 function doGet() {
-  var template = HtmlService.createTemplateFromFile('Index');
+  var template = createTemplateFromProjectFile_('Index');
   template.appName = 'Talent Hub Serratec';
   return template.evaluate()
     .setTitle('Talent Hub Serratec')
@@ -13,7 +13,28 @@ function include(filename) {
     'Vagas', 'Matchmaking', 'Shortlists', 'Integracoes', 'AuditLogs'
   ];
   if (allowed.indexOf(filename) === -1) throw new Error('Template não permitido: ' + filename);
-  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+  return createHtmlOutputFromProjectFile_(filename).getContent();
+}
+
+/**
+ * Resolve arquivos HTML tanto em projetos enviados com `rootDir: src` pelo
+ * clasp quanto em projetos sincronizados pelo GitHub Assistant, que preserva
+ * o prefixo `src/` no nome dos arquivos dentro do Apps Script.
+ */
+function createTemplateFromProjectFile_(filename) {
+  try {
+    return HtmlService.createTemplateFromFile(filename);
+  } catch (error) {
+    return HtmlService.createTemplateFromFile('src/' + filename);
+  }
+}
+
+function createHtmlOutputFromProjectFile_(filename) {
+  try {
+    return HtmlService.createHtmlOutputFromFile(filename);
+  } catch (error) {
+    return HtmlService.createHtmlOutputFromFile('src/' + filename);
+  }
 }
 
 function getAppBootstrap() {
