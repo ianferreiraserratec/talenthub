@@ -1,0 +1,39 @@
+<section class="screen" id="screen-integracoes" data-title="Integrações">
+  <div class="page-heading">
+    <div><p class="eyebrow">Base de dados</p><h2>Integrações</h2><p>Configure os ambientes e sincronize o CDP com o cache operacional.</p></div>
+    <button class="button button-primary" id="sync-all-button">↻ Sincronizar tudo</button>
+  </div>
+
+  <div class="integration-grid">
+    <article class="panel">
+      <div class="panel-header"><div><h3>Configuração</h3><p>Valores são salvos nas Script Properties e não no Git.</p></div></div>
+      <form id="config-form" class="form-stack">
+        <label><span>ID da planilha CDP</span><input name="CDP_SPREADSHEET_ID" autocomplete="off" placeholder="ID da planilha central"></label>
+        <label><span>ID da planilha Talent Hub</span><input name="TH_SPREADSHEET_ID" autocomplete="off" placeholder="ID da planilha operacional"></label>
+        <div class="form-grid two-columns">
+          <label><span>Aba de pessoas</span><input name="ABA_CDP_PESSOAS" value="PESSOAS"></label>
+          <label><span>Aba de matrículas</span><input name="ABA_CDP_MATRICULAS" value="MATRICULAS"></label>
+          <label><span>Validade do cadastro (dias)</span><input name="DIAS_CADASTRO_VALIDO" type="number" min="1" value="90"></label>
+          <label><span>Status válido do termo</span><input name="TERMO_STATUS_VALIDO" value="ATIVO"></label>
+        </div>
+        <button class="button button-secondary" type="submit">Salvar configuração</button>
+      </form>
+    </article>
+
+    <article class="panel">
+      <div class="panel-header"><div><h3>Ações de banco</h3><p>Execute o setup uma vez e sincronize quando necessário.</p></div></div>
+      <div class="action-list">
+        <button class="action-card" id="setup-database-button"><span class="action-icon">⚙</span><span><strong>Preparar banco de dados</strong><small>Cria abas, cabeçalhos e parâmetros sem apagar registros.</small></span><span>→</span></button>
+        <button class="action-card" id="sync-people-button"><span class="action-icon">◎</span><span><strong>Sincronizar pessoas</strong><small>Atualiza TH_CACHE_PESSOAS e recalcula aptidão.</small></span><span>→</span></button>
+        <button class="action-card" id="sync-registrations-button"><span class="action-icon">▤</span><span><strong>Sincronizar matrículas</strong><small>Atualiza o histórico formativo local.</small></span><span>→</span></button>
+        <button class="action-card" id="rebuild-views-button"><span class="action-icon">↻</span><span><strong>Regenerar visões</strong><small>Recalcula talentos aptos e indicadores.</small></span><span>→</span></button>
+      </div>
+    </article>
+  </div>
+
+  <article class="panel table-panel sync-history-panel">
+    <div class="panel-header"><div><h3>Últimas sincronizações</h3><p>Histórico de leituras da base central.</p></div></div>
+    <div class="table-wrap"><table><thead><tr><th>Início</th><th>Tipo</th><th>Status</th><th>Lidas</th><th>Gravadas</th><th>Mensagem</th></tr></thead><tbody id="sync-table-body"></tbody></table></div>
+    <div class="empty-state hidden" id="sync-empty"><p>Nenhuma sincronização executada.</p></div>
+  </article>
+</section>

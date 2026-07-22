@@ -1,0 +1,33 @@
+<section class="screen" id="screen-clientes" data-title="Clientes">
+  <div class="page-heading">
+    <div>
+      <p class="eyebrow">Relacionamento</p>
+      <h2>Clientes</h2>
+      <p>Gerencie empresas demandantes e acompanhe vagas e colocações.</p>
+    </div>
+    <button class="button button-primary" id="new-client-button">+ Novo cliente</button>
+  </div>
+
+  <div class="mini-metrics">
+    <div><span>Total de clientes</span><strong id="clients-total-card">—</strong></div>
+    <div><span>Clientes ativos</span><strong id="clients-active-card">—</strong></div>
+    <div><span>Vagas abertas</span><strong id="clients-jobs-card">—</strong></div>
+    <div><span>Colocações</span><strong id="clients-hires-card">—</strong></div>
+  </div>
+
+  <div class="toolbar panel compact-panel">
+    <label class="search-field"><span class="sr-only">Buscar cliente</span><input type="search" id="clientes-search" placeholder="Buscar empresa, CNPJ, setor ou cidade"></label>
+    <label><span class="sr-only">Status do cliente</span><select id="clientes-status"><option>Todos</option><option>Prospect</option><option>Em negociação</option><option>Ativo</option><option>Inativo</option><option>Encerrado</option></select></label>
+    <span class="result-count" id="clientes-count">0 clientes</span>
+  </div>
+
+  <div class="panel table-panel">
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Cliente</th><th>Setor / porte</th><th>Vagas abertas</th><th>Colocações</th><th>Status</th><th class="align-right">Ações</th></tr></thead>
+        <tbody id="clientes-table-body"></tbody>
+      </table>
+    </div>
+    <div class="empty-state hidden" id="clientes-empty"><div class="empty-icon">▣</div><h3>Nenhum cliente cadastrado</h3><p>Cadastre o primeiro cliente para começar.</p></div>
+  </div>
+</section>

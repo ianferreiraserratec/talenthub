@@ -1,0 +1,546 @@
+<script>
+  const App = {
+    route: 'dashboard',
+    initialized: false,
+    params: {},
+    dashboard: {},
+    talents: [],
+    clients: [],
+    jobs: [],
+    currentTalentId: '',
+    busyCount: 0
+  };
+
+  document.addEventListener('DOMContentLoaded', initApp);
+
+  async function initApp() {
+    bindNavigation();
+    bindDialogs();
+    bindFilters();
+    bindForms();
+    bindActions();
+    setBusy(true, 'Inicializando o Talent Hub…');
+    try {
+      const bootstrap = await server('getAppBootstrap');
+      App.initialized = bootstrap.initialized;
+      document.getElementById('app-version').textContent = bootstrap.version;
+      document.getElementById('active-user').textContent = bootstrap.user || 'Usuário Serratec';
+      document.getElementById('user-avatar').textContent = String(bootstrap.user || 'S').charAt(0).toUpperCase();
+      fillConfigForm(bootstrap.config || {});
+
+      if (!bootstrap.initialized) {
+        showGlobalAlert('A estrutura do banco ainda não está completa. Confira o ID da planilha e use “Preparar banco de dados”.');
+        activateRoute('integracoes');
+        return;
+      }
+
+      hideGlobalAlert();
+      await loadReferenceData();
+      await loadDashboard();
+    } catch (error) {
+      showGlobalAlert('Não foi possível iniciar: ' + error.message);
+      activateRoute('integracoes');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function server(method, ...args) {
+    return new Promise((resolve, reject) => {
+      const runner = google.script.run
+        .withSuccessHandler(resolve)
+        .withFailureHandler(error => reject(new Error(error && error.message ? error.message : String(error))));
+      runner[method](...args);
+    });
+  }
+
+  function bindNavigation() {
+    document.querySelectorAll('[data-route]').forEach(button => {
+      button.addEventListener('click', () => activateRoute(button.dataset.route));
+    });
+    document.querySelectorAll('[data-route-action]').forEach(button => {
+      button.addEventListener('click', () => activateRoute(button.dataset.routeAction));
+    });
+    document.getElementById('menu-toggle').addEventListener('click', () => document.getElementById('sidebar').classList.toggle('open'));
+    document.getElementById('refresh-current').addEventListener('click', () => loadRoute(App.route, true));
+  }
+
+  function activateRoute(route) {
+    App.route = route;
+    document.querySelectorAll('.screen').forEach(screen => screen.classList.toggle('active', screen.id === 'screen-' + route));
+    document.querySelectorAll('.nav-item').forEach(item => item.classList.toggle('active', item.dataset.route === route));
+    const screen = document.getElementById('screen-' + route);
+    document.getElementById('page-title').textContent = screen ? screen.dataset.title : 'Talent Hub';
+    document.getElementById('sidebar').classList.remove('open');
+    loadRoute(route);
+  }
+
+  async function loadRoute(route, force) {
+    if (!App.initialized && route !== 'integracoes') return;
+    try {
+      if (route === 'dashboard') await loadDashboard();
+      if (route === 'talentos') await loadTalents();
+      if (route === 'clientes') await loadClients();
+      if (route === 'vagas') await loadJobs();
+      if (route === 'integracoes') await loadIntegrations();
+      if (route === 'audit') await loadAuditLogs();
+    } catch (error) {
+      notify(error.message, 'error');
+    }
+  }
+
+  async function loadReferenceData() {
+    App.params = await server('getParametros', ['areas_interesse', 'senioridades', 'modalidades', 'tipos_contratacao']);
+    fillSelect('talent-area-select', App.params.areas_interesse);
+    fillSelect('talent-seniority-select', App.params.senioridades);
+    fillSelect('job-seniority-select', App.params.senioridades);
+    fillSelect('job-modality-select', App.params.modalidades);
+    fillSelect('job-contract-select', App.params.tipos_contratacao);
+  }
+
+  function fillSelect(id, items) {
+    const select = document.getElementById(id);
+    if (!select) return;
+    const current = select.value;
+    select.innerHTML = '<option value="">Selecione</option>' + (items || []).map(item => `<option value="${escapeAttr(item.valor)}">${escapeHtml(item.valor)}</option>`).join('');
+    select.value = current;
+  }
+
+  async function loadDashboard() {
+    const data = await server('getDashboard');
+    App.dashboard = data.metrics || {};
+    const m = App.dashboard;
+    text('metric-talentos-aptos', formatNumber(m.talentos_aptos));
+    text('metric-talentos-disponiveis', `${formatNumber(m.talentos_disponiveis)} disponíveis`);
+    text('metric-clientes-ativos', formatNumber(m.clientes_ativos));
+    text('metric-clientes-total', `${formatNumber(m.clientes_total)} cadastrados`);
+    text('metric-vagas-abertas', formatNumber(m.vagas_abertas));
+    text('metric-vagas-processo', `${formatNumber(m.vagas_em_processo)} em processo`);
+    text('metric-contratacoes', formatNumber(m.contratacoes_total));
+    text('metric-massa-salarial', `Massa salarial: ${formatCurrency(m.massa_salarial_gerada)}`);
+    text('health-cadastro', formatNumber(m.talentos_cadastro_atualizado_90d));
+    text('health-termo', formatNumber(m.talentos_com_termo_ativo));
+    text('health-processo', formatNumber(m.talentos_em_processo));
+    text('health-bloqueados', formatNumber(m.talentos_bloqueados));
+    text('health-inelegiveis', formatNumber(m.talentos_inelegiveis));
+    text('dashboard-updated', data.atualizado_em ? `Atualizado em ${formatDateTime(data.atualizado_em)}` : 'Aguardando atualização.');
+    refreshContextCards();
+  }
+
+  async function loadTalents() {
+    const filters = {
+      search: document.getElementById('talentos-search').value,
+      status: document.getElementById('talentos-status').value,
+      pageSize: 100
+    };
+    const data = await server('getTalentos', filters);
+    App.talents = data.items || [];
+    text('talentos-count', `${formatNumber(data.total)} talento${data.total === 1 ? '' : 's'}`);
+    renderTalents(App.talents);
+  }
+
+  function renderTalents(items) {
+    const body = document.getElementById('talentos-table-body');
+    const empty = document.getElementById('talentos-empty');
+    empty.classList.toggle('hidden', items.length > 0);
+    body.innerHTML = items.map(item => `
+      <tr>
+        <td><div class="primary-cell"><strong>${escapeHtml(item.nome || 'Sem nome')}</strong><small>${escapeHtml(item.email || item.email_serratec || item.pessoa_id)}</small></div></td>
+        <td><div class="primary-cell"><span>${escapeHtml(item.curso || item.ult_formacao || 'Não informada')}</span><small>${escapeHtml(item.faculdade || '')}</small></div></td>
+        <td><div class="primary-cell"><span>${escapeHtml(item.area_interesse_principal || 'Área não informada')}</span><small>${escapeHtml(item.senioridade || item.principais_competencias || '')}</small></div></td>
+        <td><span class="status-badge ${item.apto_talent_hub === 'SIM' ? 'status-positive' : 'status-negative'}">${item.apto_talent_hub === 'SIM' ? 'Apto' : eligibilityLabel(item.motivo_nao_apto)}</span></td>
+        <td><span class="status-badge ${statusClass(item.status_pool)}">${escapeHtml(item.status_pool || '—')}</span></td>
+        <td class="align-right"><button class="table-action talent-view" data-id="${escapeAttr(item.pessoa_id)}">Ver</button> <button class="table-action talent-edit" data-id="${escapeAttr(item.pessoa_id)}">Editar</button></td>
+      </tr>`).join('');
+  }
+
+  async function openTalentDetail(personId) {
+    setBusy(true, 'Carregando perfil…');
+    try {
+      const detail = await server('getTalentoById', personId);
+      App.currentTalentId = personId;
+      const person = detail.pessoa || {};
+      document.getElementById('talent-detail-title').textContent = person.nome || 'Talento';
+      const registrations = (detail.matriculas || []).map(item => escapeHtml(`${item.modalidade || 'Formação'} · ${item.ciclo || item.turma || 'sem ciclo'} · ${item.status_aluno || item.status_curso || ''}`)).join('<br>') || 'Nenhuma matrícula sincronizada.';
+      document.getElementById('talent-detail-content').innerHTML = `
+        <div class="detail-grid">
+          ${detailItem('Pessoa ID', person.pessoa_id)}
+          ${detailItem('Status no pool', `<span class="status-badge ${statusClass(person.status_pool)}">${escapeHtml(person.status_pool)}</span>`, true)}
+          ${detailItem('E-mail', person.email || person.email_serratec)}
+          ${detailItem('Telefone', person.celular)}
+          ${detailItem('Localidade', [person.cidade, person.uf].filter(Boolean).join(' / '))}
+          ${detailItem('Cadastro', person.cadastro_atualizado_90d === 'SIM' ? `Válido · ${person.dias_desde_atualizacao} dias` : 'Desatualizado')}
+          ${detailItem('Termo', [person.termo_status, person.termo_versao].filter(Boolean).join(' · '))}
+          ${detailItem('Área / senioridade', [person.area_interesse_principal, person.senioridade].filter(Boolean).join(' · '))}
+        </div>
+        <div class="detail-section"><span>Competências</span><p>${escapeHtml(person.principais_competencias || 'Não informadas.')}</p></div>
+        <div class="detail-section"><span>Formações Serratec</span><p>${registrations}</p></div>
+        <div class="detail-section"><span>Links profissionais</span><p>${safeLink(person.linkedin, 'LinkedIn')} ${safeLink(person.curriculo, 'Currículo')}</p></div>`;
+      document.getElementById('talent-detail-dialog').showModal();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function openTalentForm(personId) {
+    setBusy(true, 'Preparando edição…');
+    try {
+      const detail = await server('getTalentoById', personId);
+      const form = document.getElementById('talent-form');
+      form.reset();
+      fillForm(form, Object.assign({ pessoa_id: personId }, detail.talentHub || {}));
+      form.elements.disponivel_para_oportunidades.checked = isYes((detail.talentHub || {}).disponivel_para_oportunidades);
+      form.elements.aceita_exclusividade.checked = isYes((detail.talentHub || {}).aceita_exclusividade);
+      document.getElementById('talent-form-dialog').showModal();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function loadClients() {
+    const data = await server('getClientes', {
+      search: document.getElementById('clientes-search').value,
+      status: document.getElementById('clientes-status').value
+    });
+    App.clients = data || [];
+    text('clientes-count', `${App.clients.length} cliente${App.clients.length === 1 ? '' : 's'}`);
+    renderClients(App.clients);
+    populateClientSelect();
+    refreshContextCards();
+  }
+
+  function renderClients(items) {
+    const body = document.getElementById('clientes-table-body');
+    document.getElementById('clientes-empty').classList.toggle('hidden', items.length > 0);
+    body.innerHTML = items.map(item => `
+      <tr>
+        <td><div class="primary-cell"><strong>${escapeHtml(item.nome_empresa)}</strong><small>${escapeHtml([item.cidade, item.uf].filter(Boolean).join(' / ') || item.cnpj || '')}</small></div></td>
+        <td><div class="primary-cell"><span>${escapeHtml(item.setor || 'Não informado')}</span><small>${escapeHtml(item.porte || '')}</small></div></td>
+        <td>${formatNumber(item.vagas_abertas)}</td><td>${formatNumber(item.colocacoes)}</td>
+        <td><span class="status-badge ${statusClass(item.status_cliente)}">${escapeHtml(item.status_cliente || '—')}</span></td>
+        <td class="align-right"><button class="table-action client-edit" data-id="${escapeAttr(item.cliente_id)}">Editar</button></td>
+      </tr>`).join('');
+  }
+
+  function openClientForm(clientId) {
+    const form = document.getElementById('client-form');
+    form.reset();
+    const client = App.clients.find(item => item.cliente_id === clientId);
+    document.getElementById('client-form-title').textContent = client ? 'Editar cliente' : 'Novo cliente';
+    if (client) fillForm(form, client);
+    document.getElementById('client-form-dialog').showModal();
+  }
+
+  async function loadJobs() {
+    if (!App.clients.length) {
+      App.clients = await server('getClientes', {});
+      populateClientSelect();
+    }
+    const data = await server('getVagas', {
+      search: document.getElementById('vagas-search').value,
+      status: document.getElementById('vagas-status').value
+    });
+    App.jobs = data || [];
+    text('vagas-count', `${App.jobs.length} vaga${App.jobs.length === 1 ? '' : 's'}`);
+    renderJobs(App.jobs);
+    refreshContextCards();
+  }
+
+  function renderJobs(items) {
+    const body = document.getElementById('vagas-table-body');
+    document.getElementById('vagas-empty').classList.toggle('hidden', items.length > 0);
+    body.innerHTML = items.map(item => `
+      <tr>
+        <td><div class="primary-cell"><strong>${escapeHtml(item.titulo_vaga)}</strong><small>${escapeHtml([item.area_vaga, item.senioridade, item.modalidade].filter(Boolean).join(' · '))}</small></div></td>
+        <td>${escapeHtml(item.nome_empresa || item.cliente_id)}</td>
+        <td><span class="status-badge ${statusClass(item.status_vaga)}">${escapeHtml(item.status_vaga || '—')}</span></td>
+        <td>${formatNumber(item.total_candidatos)}</td>
+        <td>${formatSalaryRange(item.faixa_salarial_min, item.faixa_salarial_max)}</td>
+        <td class="align-right"><button class="table-action job-edit" data-id="${escapeAttr(item.vaga_id)}">Editar</button></td>
+      </tr>`).join('');
+  }
+
+  function openJobForm(jobId) {
+    const form = document.getElementById('job-form');
+    form.reset();
+    form.elements.qtd_posicoes.value = 1;
+    const job = App.jobs.find(item => item.vaga_id === jobId);
+    document.getElementById('job-form-title').textContent = job ? 'Editar vaga' : 'Nova vaga';
+    if (job) fillForm(form, job);
+    document.getElementById('job-form-dialog').showModal();
+  }
+
+  function populateClientSelect() {
+    const select = document.getElementById('job-client-select');
+    const current = select.value;
+    select.innerHTML = '<option value="">Selecione</option>' + App.clients.map(client => `<option value="${escapeAttr(client.cliente_id)}">${escapeHtml(client.nome_empresa)}</option>`).join('');
+    select.value = current;
+  }
+
+  async function loadIntegrations() {
+    const [config, status] = await Promise.all([server('getRuntimeConfig'), App.initialized ? server('getSyncStatus') : Promise.resolve({ latest: [] })]);
+    fillConfigForm(config);
+    renderSyncHistory(status.latest || []);
+  }
+
+  function fillConfigForm(config) {
+    const form = document.getElementById('config-form');
+    if (!form) return;
+    Object.keys(config || {}).forEach(key => {
+      if (form.elements[key]) form.elements[key].value = config[key] == null ? '' : config[key];
+    });
+  }
+
+  function renderSyncHistory(items) {
+    const body = document.getElementById('sync-table-body');
+    document.getElementById('sync-empty').classList.toggle('hidden', items.length > 0);
+    body.innerHTML = items.map(item => `<tr><td>${formatDateTime(item.iniciado_em)}</td><td>${escapeHtml(item.tipo_sync)}</td><td><span class="status-badge ${item.status === 'CONCLUIDO' ? 'status-positive' : item.status === 'ERRO' ? 'status-negative' : 'status-warning'}">${escapeHtml(item.status)}</span></td><td>${formatNumber(item.total_linhas_lidas)}</td><td>${formatNumber(item.total_linhas_gravadas)}</td><td>${escapeHtml(item.mensagem || '')}</td></tr>`).join('');
+  }
+
+  async function loadAuditLogs() {
+    const items = await server('getAuditLogs', {
+      search: document.getElementById('audit-search').value,
+      dateFrom: document.getElementById('audit-date-from').value,
+      dateTo: document.getElementById('audit-date-to').value,
+      action: document.getElementById('audit-action').value,
+      entity: document.getElementById('audit-entity').value,
+      limit: 200
+    });
+    const body = document.getElementById('audit-table-body');
+    document.getElementById('audit-empty').classList.toggle('hidden', items.length > 0);
+    body.innerHTML = items.map(item => `<tr><td>${formatDateTime(item.data_evento)}</td><td>${escapeHtml(item.usuario)}</td><td><span class="status-badge ${statusClass(item.acao)}">${escapeHtml(item.acao)}</span></td><td><div class="primary-cell"><strong>${escapeHtml(item.entidade)}</strong><small>${escapeHtml(item.entidade_id || '')}</small></div></td><td><div class="primary-cell"><span>${escapeHtml(item.campo_alterado || item.observacao || '—')}</span><small>${item.valor_novo ? `${escapeHtml(item.valor_anterior || '—')} → ${escapeHtml(item.valor_novo)}` : ''}</small></div></td><td>${escapeHtml(item.origem || '')}</td></tr>`).join('');
+  }
+
+  function bindFilters() {
+    document.getElementById('talentos-search').addEventListener('input', debounce(loadTalents, 300));
+    document.getElementById('talentos-status').addEventListener('change', loadTalents);
+    document.getElementById('clientes-search').addEventListener('input', debounce(loadClients, 300));
+    document.getElementById('clientes-status').addEventListener('change', loadClients);
+    document.getElementById('vagas-search').addEventListener('input', debounce(loadJobs, 300));
+    document.getElementById('vagas-status').addEventListener('change', loadJobs);
+    document.getElementById('audit-search').addEventListener('input', debounce(loadAuditLogs, 300));
+    document.getElementById('audit-date-from').addEventListener('change', loadAuditLogs);
+    document.getElementById('audit-date-to').addEventListener('change', loadAuditLogs);
+    document.getElementById('audit-action').addEventListener('change', loadAuditLogs);
+    document.getElementById('audit-entity').addEventListener('change', loadAuditLogs);
+  }
+
+  function bindDialogs() {
+    document.querySelectorAll('[data-close-dialog]').forEach(button => button.addEventListener('click', () => document.getElementById(button.dataset.closeDialog).close()));
+    document.querySelectorAll('dialog').forEach(dialog => dialog.addEventListener('click', event => {
+      if (event.target === dialog) dialog.close();
+    }));
+    document.getElementById('talent-detail-edit').addEventListener('click', () => {
+      document.getElementById('talent-detail-dialog').close();
+      openTalentForm(App.currentTalentId);
+    });
+  }
+
+  function bindActions() {
+    document.getElementById('new-client-button').addEventListener('click', () => openClientForm());
+    document.getElementById('new-job-button').addEventListener('click', () => openJobForm());
+    document.getElementById('talentos-table-body').addEventListener('click', event => {
+      const button = event.target.closest('button[data-id]');
+      if (!button) return;
+      if (button.classList.contains('talent-view')) openTalentDetail(button.dataset.id);
+      if (button.classList.contains('talent-edit')) openTalentForm(button.dataset.id);
+    });
+    document.getElementById('clientes-table-body').addEventListener('click', event => {
+      const button = event.target.closest('.client-edit');
+      if (button) openClientForm(button.dataset.id);
+    });
+    document.getElementById('vagas-table-body').addEventListener('click', event => {
+      const button = event.target.closest('.job-edit');
+      if (button) openJobForm(button.dataset.id);
+    });
+    document.getElementById('setup-database-button').addEventListener('click', setupDatabase);
+    document.getElementById('sync-all-button').addEventListener('click', () => runSync('syncAll', 'Sincronizando toda a base…'));
+    document.getElementById('sync-people-button').addEventListener('click', () => runSync('syncPessoas', 'Sincronizando pessoas…'));
+    document.getElementById('talentos-sync-button').addEventListener('click', () => runSync('syncPessoas', 'Sincronizando pessoas…'));
+    document.getElementById('sync-registrations-button').addEventListener('click', () => runSync('syncMatriculas', 'Sincronizando matrículas…'));
+    document.getElementById('rebuild-views-button').addEventListener('click', rebuildViews);
+  }
+
+  function bindForms() {
+    document.getElementById('config-form').addEventListener('submit', async event => {
+      event.preventDefault();
+      setBusy(true, 'Salvando configuração…');
+      try {
+        const config = await server('saveRuntimeConfig', formToObject(event.currentTarget));
+        fillConfigForm(config);
+        notify('Configuração salva.');
+      } catch (error) { notify(error.message, 'error'); }
+      finally { setBusy(false); }
+    });
+
+    document.getElementById('talent-form').addEventListener('submit', async event => {
+      event.preventDefault();
+      const payload = formToObject(event.currentTarget);
+      payload.disponivel_para_oportunidades = event.currentTarget.elements.disponivel_para_oportunidades.checked ? 'SIM' : 'NAO';
+      payload.aceita_exclusividade = event.currentTarget.elements.aceita_exclusividade.checked ? 'SIM' : 'NAO';
+      setBusy(true, 'Salvando perfil…');
+      try {
+        await server('updateTalentoTalentHubData', payload);
+        event.currentTarget.closest('dialog').close();
+        await Promise.all([loadTalents(), loadDashboard()]);
+        notify('Perfil profissional atualizado.');
+      } catch (error) { notify(error.message, 'error'); }
+      finally { setBusy(false); }
+    });
+
+    document.getElementById('client-form').addEventListener('submit', async event => {
+      event.preventDefault();
+      const payload = formToObject(event.currentTarget);
+      setBusy(true, 'Salvando cliente…');
+      try {
+        if (payload.cliente_id) await server('updateCliente', payload.cliente_id, payload);
+        else await server('createCliente', payload);
+        event.currentTarget.closest('dialog').close();
+        await Promise.all([loadClients(), loadDashboard()]);
+        notify('Cliente salvo com sucesso.');
+      } catch (error) { notify(error.message, 'error'); }
+      finally { setBusy(false); }
+    });
+
+    document.getElementById('job-form').addEventListener('submit', async event => {
+      event.preventDefault();
+      const payload = formToObject(event.currentTarget);
+      setBusy(true, 'Salvando vaga…');
+      try {
+        if (payload.vaga_id) await server('updateVaga', payload.vaga_id, payload);
+        else await server('createVaga', payload);
+        event.currentTarget.closest('dialog').close();
+        await Promise.all([loadJobs(), loadDashboard()]);
+        notify('Vaga salva com sucesso.');
+      } catch (error) { notify(error.message, 'error'); }
+      finally { setBusy(false); }
+    });
+  }
+
+  async function setupDatabase() {
+    setBusy(true, 'Preparando as abas do Talent Hub…');
+    try {
+      const result = await server('setupTalentHubDatabase');
+      App.initialized = true;
+      hideGlobalAlert();
+      await loadReferenceData();
+      await Promise.all([loadIntegrations(), loadDashboard()]);
+      notify(result.message || 'Banco preparado.');
+    } catch (error) { notify(error.message, 'error'); }
+    finally { setBusy(false); }
+  }
+
+  async function runSync(method, message) {
+    if (!App.initialized) return notify('Prepare o banco de dados primeiro.', 'error');
+    setBusy(true, message);
+    try {
+      await server(method);
+      await Promise.all([loadIntegrations(), loadDashboard()]);
+      if (App.route === 'talentos') await loadTalents();
+      notify('Sincronização concluída.');
+    } catch (error) { notify(error.message, 'error'); }
+    finally { setBusy(false); }
+  }
+
+  async function rebuildViews() {
+    setBusy(true, 'Regenerando visões e indicadores…');
+    try {
+      await server('regenerateTalentView');
+      await server('regenerateDashboard');
+      await Promise.all([loadIntegrations(), loadDashboard()]);
+      notify('Visões regeneradas.');
+    } catch (error) { notify(error.message, 'error'); }
+    finally { setBusy(false); }
+  }
+
+  function refreshContextCards() {
+    const m = App.dashboard || {};
+    text('clients-total-card', formatNumber(m.clientes_total));
+    text('clients-active-card', formatNumber(m.clientes_ativos));
+    text('clients-jobs-card', formatNumber(m.vagas_abertas));
+    text('clients-hires-card', formatNumber(m.contratacoes_total));
+    text('jobs-open-card', formatNumber(m.vagas_abertas));
+    text('jobs-process-card', formatNumber(m.vagas_em_processo));
+    text('jobs-candidates-card', formatNumber(m.processos_ativos));
+    text('jobs-closed-card', formatNumber(m.vagas_encerradas));
+  }
+
+  function formToObject(form) {
+    const object = {};
+    new FormData(form).forEach((value, key) => { object[key] = typeof value === 'string' ? value.trim() : value; });
+    return object;
+  }
+
+  function fillForm(form, data) {
+    Object.keys(data || {}).forEach(key => {
+      const field = form.elements[key];
+      if (!field || field.type === 'checkbox') return;
+      let value = data[key] == null ? '' : data[key];
+      if (field.type === 'date' && value) value = toInputDate(value);
+      field.value = value;
+    });
+  }
+
+  function setBusy(active, message) {
+    App.busyCount = Math.max(0, App.busyCount + (active ? 1 : -1));
+    if (active && message) text('loading-message', message);
+    document.getElementById('loading-overlay').classList.toggle('hidden', App.busyCount === 0);
+  }
+
+  function notify(message, type) {
+    const toast = document.createElement('div');
+    toast.className = 'toast' + (type === 'error' ? ' error' : '');
+    toast.textContent = message;
+    document.getElementById('toast-region').appendChild(toast);
+    setTimeout(() => toast.remove(), 4500);
+  }
+
+  function showGlobalAlert(message) {
+    const alert = document.getElementById('global-alert');
+    alert.textContent = message;
+    alert.classList.remove('hidden');
+  }
+
+  function hideGlobalAlert() { document.getElementById('global-alert').classList.add('hidden'); }
+  function text(id, value) { const element = document.getElementById(id); if (element) element.textContent = value == null ? '' : value; }
+  function formatNumber(value) { return Number(value || 0).toLocaleString('pt-BR'); }
+  function formatCurrency(value) { return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); }
+  function formatSalaryRange(min, max) {
+    if (min && max) return `${formatCurrency(min)} – ${formatCurrency(max)}`;
+    if (min) return `A partir de ${formatCurrency(min)}`;
+    if (max) return `Até ${formatCurrency(max)}`;
+    return 'Não informada';
+  }
+  function formatDateTime(value) {
+    if (!value) return '—';
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? escapeHtml(String(value)) : date.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+  }
+  function toInputDate(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value).slice(0, 10);
+    return date.toISOString().slice(0, 10);
+  }
+  function eligibilityLabel(reason) {
+    if (reason === 'CADASTRO_DESATUALIZADO') return 'Cadastro vencido';
+    if (reason === 'TERMO_CANCELADO_OU_INEXISTENTE') return 'Termo pendente';
+    return 'Inelegível';
+  }
+  function statusClass(status) {
+    const value = String(status || '').toLowerCase();
+    if (/(disponível|ativo|aberta|conclu|contratado|create)/.test(value)) return 'status-positive';
+    if (/(processo|enviad|entrevista|update|sync)/.test(value)) return 'status-info';
+    if (/(bloque|negociação|rascunho|briefing|validando|aguardando)/.test(value)) return 'status-warning';
+    if (/(inelegível|cancelad|recusado|encerrad|erro)/.test(value)) return 'status-negative';
+    return 'status-neutral';
+  }
+  function detailItem(label, value, raw) { return `<div class="detail-item"><span>${escapeHtml(label)}</span><strong>${raw ? value : escapeHtml(value || '—')}</strong></div>`; }
+  function safeLink(url, label) {
+    if (!url || !/^https?:\/\//i.test(String(url))) return '';
+    return `<a href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`;
+  }
+  function isYes(value) { return ['sim', 'true', '1', 'ativo'].includes(String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()); }
+  function escapeHtml(value) { return String(value == null ? '' : value).replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char])); }
+  function escapeAttr(value) { return escapeHtml(value); }
+  function debounce(fn, delay) { let timer; return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), delay); }; }
+</script>

@@ -1,0 +1,33 @@
+<section class="screen" id="screen-vagas" data-title="Vagas">
+  <div class="page-heading">
+    <div>
+      <p class="eyebrow">Oportunidades</p>
+      <h2>Vagas</h2>
+      <p>Cadastre briefings, acompanhe o funil e prepare critérios de matchmaking.</p>
+    </div>
+    <button class="button button-primary" id="new-job-button">+ Nova vaga</button>
+  </div>
+
+  <div class="mini-metrics">
+    <div><span>Vagas abertas</span><strong id="jobs-open-card">—</strong></div>
+    <div><span>Em processo</span><strong id="jobs-process-card">—</strong></div>
+    <div><span>Candidatos</span><strong id="jobs-candidates-card">—</strong></div>
+    <div><span>Encerradas</span><strong id="jobs-closed-card">—</strong></div>
+  </div>
+
+  <div class="toolbar panel compact-panel">
+    <label class="search-field"><span class="sr-only">Buscar vaga</span><input type="search" id="vagas-search" placeholder="Buscar vaga, empresa, área ou cidade"></label>
+    <label><span class="sr-only">Status da vaga</span><select id="vagas-status"><option>Todos</option><option>Rascunho</option><option>Briefing recebido</option><option>Validando pool</option><option>Aberta</option><option>Shortlist enviada</option><option>Em processo</option><option>Preenchida</option><option>Encerrada sem contratação</option><option>Cancelada</option></select></label>
+    <span class="result-count" id="vagas-count">0 vagas</span>
+  </div>
+
+  <div class="panel table-panel">
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Vaga</th><th>Empresa</th><th>Status</th><th>Candidatos</th><th>Faixa salarial</th><th class="align-right">Ações</th></tr></thead>
+        <tbody id="vagas-table-body"></tbody>
+      </table>
+    </div>
+    <div class="empty-state hidden" id="vagas-empty"><div class="empty-icon">◇</div><h3>Nenhuma vaga encontrada</h3><p>Cadastre uma oportunidade ou ajuste os filtros.</p></div>
+  </div>
+</section>

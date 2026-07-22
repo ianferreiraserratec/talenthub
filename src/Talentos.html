@@ -1,0 +1,45 @@
+<section class="screen" id="screen-talentos" data-title="Talentos">
+  <div class="page-heading">
+    <div>
+      <p class="eyebrow">Pool Serratec.Dev</p>
+      <h2>Banco de Talentos</h2>
+      <p>Dados pessoais vêm do CDP; aqui a equipe gerencia somente a camada profissional.</p>
+    </div>
+    <button class="button button-secondary" id="talentos-sync-button">↻ Sincronizar pessoas</button>
+  </div>
+
+  <div class="toolbar panel compact-panel">
+    <label class="search-field">
+      <span class="sr-only">Buscar talentos</span>
+      <input type="search" id="talentos-search" placeholder="Buscar nome, CPF, formação, área ou competência">
+    </label>
+    <label>
+      <span class="sr-only">Filtrar por status</span>
+      <select id="talentos-status">
+        <option>Todos</option>
+        <option>Aptos</option>
+        <option>Disponível</option>
+        <option>Em processo</option>
+        <option>Bloqueado</option>
+        <option>Contratado</option>
+        <option>Inativo</option>
+        <option>Inelegível</option>
+        <option>Cadastro vencido</option>
+        <option>Termo cancelado</option>
+      </select>
+    </label>
+    <span class="result-count" id="talentos-count">0 talentos</span>
+  </div>
+
+  <div class="panel table-panel">
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Talento</th><th>Formação</th><th>Perfil profissional</th><th>Aptidão</th><th>Status</th><th class="align-right">Ações</th></tr></thead>
+        <tbody id="talentos-table-body"></tbody>
+      </table>
+    </div>
+    <div class="empty-state hidden" id="talentos-empty">
+      <div class="empty-icon">◎</div><h3>Nenhum talento encontrado</h3><p>Sincronize a base ou ajuste os filtros.</p>
+    </div>
+  </div>
+</section>
