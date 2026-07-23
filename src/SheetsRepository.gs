@@ -69,6 +69,16 @@ function appendObject_(sheetName, object) {
   return serializeForClient_(object);
 }
 
+function appendObjects_(sheetName, objects) {
+  objects = Array.isArray(objects) ? objects : [];
+  if (!objects.length) return 0;
+  var sheet = getSheetOrThrow_(sheetName);
+  var headers = getHeader_(sheet);
+  var matrix = objects.map(function (object) { return objectToRow_(headers, object); });
+  sheet.getRange(sheet.getLastRow() + 1, 1, matrix.length, headers.length).setValues(matrix);
+  return matrix.length;
+}
+
 function updateObjectById_(sheetName, idField, idValue, patch, allowedFields) {
   var sheet = getSheetOrThrow_(sheetName);
   var headers = getHeader_(sheet);
@@ -97,6 +107,24 @@ function updateObjectById_(sheetName, idField, idValue, patch, allowedFields) {
   });
   sheet.getRange(rowNumber, 1, 1, headers.length).setValues([current]);
   return { before: before, after: rowsToObjects_(headers, [current])[0] };
+}
+
+function deleteObjectById_(sheetName, idField, idValue) {
+  var sheet = getSheetOrThrow_(sheetName);
+  var headers = getHeader_(sheet);
+  var idColumn = headers.indexOf(idField);
+  if (idColumn === -1) throw new Error('Chave ' + idField + ' não existe em ' + sheetName + '.');
+  if (sheet.getLastRow() <= 1) return null;
+
+  var idValues = sheet.getRange(2, idColumn + 1, sheet.getLastRow() - 1, 1).getDisplayValues();
+  for (var index = 0; index < idValues.length; index += 1) {
+    if (String(idValues[index][0]).trim() !== String(idValue).trim()) continue;
+    var rowNumber = index + 2;
+    var before = rowsToObjects_(headers, [sheet.getRange(rowNumber, 1, 1, headers.length).getValues()[0]])[0];
+    sheet.deleteRow(rowNumber);
+    return before;
+  }
+  return null;
 }
 
 function upsertObject_(sheetName, idField, object) {

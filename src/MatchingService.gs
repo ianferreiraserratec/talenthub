@@ -22,25 +22,26 @@ function getMatchingSetup(vagaId) {
 
 function getMatchingTalentFields_() {
   return [
-    ['area_interesse_principal', 'Área principal'],
-    ['areas_interesse_secundarias', 'Áreas secundárias'],
-    ['senioridade', 'Senioridade'],
-    ['principais_competencias', 'Competências'],
-    ['modalidade_preferida', 'Modalidade preferida'],
-    ['tipo_contratacao_preferida', 'Tipo de contratação'],
-    ['regioes_interesse', 'Regiões de interesse'],
-    ['pretensao_salarial_min', 'Pretensão mínima'],
-    ['pretensao_salarial_max', 'Pretensão máxima'],
-    ['disponibilidade_inicio', 'Disponibilidade de início'],
-    ['cidade', 'Cidade'],
-    ['uf', 'UF'],
-    ['genero', 'Gênero'],
-    ['cor_etnia', 'Cor/etnia'],
-    ['pcd_bol', 'Pessoa com deficiência'],
-    ['ensino_medio', 'Ensino médio'],
-    ['curso', 'Curso'],
-    ['ult_formacao', 'Última formação']
-  ].map(function (field) { return { valor: field[0], descricao: field[1] }; });
+    ['area_interesse_principal', 'Área principal', false],
+    ['areas_interesse_secundarias', 'Áreas secundárias', false],
+    ['senioridade', 'Senioridade', false],
+    ['principais_competencias', 'Competências', false],
+    ['modalidade_preferida', 'Modalidade preferida', false],
+    ['tipo_contratacao_preferida', 'Tipo de contratação', false],
+    ['regioes_interesse', 'Regiões de interesse', false],
+    ['pretensao_salarial_min', 'Pretensão mínima', false],
+    ['pretensao_salarial_max', 'Pretensão máxima', false],
+    ['pretensao_salarial_min/pretensao_salarial_max', 'Faixa de pretensão salarial', false],
+    ['disponibilidade_inicio', 'Disponibilidade de início', false],
+    ['cidade', 'Cidade', false],
+    ['uf', 'UF', false],
+    ['genero', 'Gênero', true],
+    ['cor_etnia', 'Cor/etnia', true],
+    ['pcd_bol', 'Pessoa com deficiência', true],
+    ['ensino_medio', 'Ensino médio', false],
+    ['curso', 'Curso', false],
+    ['ult_formacao', 'Última formação', false]
+  ].map(function (field) { return { valor: field[0], descricao: field[1], sensivel: field[2] ? 'SIM' : 'NAO' }; });
 }
 
 function getMatchingModels() {
@@ -57,11 +58,61 @@ function getMatchingModels() {
   return serializeForClient_(models);
 }
 
+function invalidateMatchingRuns_(predicate, reason) {
+  if (typeof predicate !== 'function') {
+    throw new Error('Predicado inválido para cancelamento de execuções de matching.');
+  }
+  var cancellationReason = String(reason || 'Configuração do matching alterada. Execute uma nova análise.').trim();
+  var candidates = getSheetObjects_('TH_MATCHING_RUNS', { raw: true }).filter(function (run) {
+    return String(run.status_run || '') === 'Concluído' && predicate(run);
+  });
+  var updated = [];
+
+  try {
+    candidates.forEach(function (run) {
+      updateObjectById_('TH_MATCHING_RUNS', 'run_id', run.run_id, {
+        status_run: 'Cancelado',
+        observacoes: cancellationReason
+      });
+      updated.push(run);
+    });
+  } catch (error) {
+    var rollbackFailures = [];
+    updated.slice().reverse().forEach(function (run) {
+      try {
+        updateObjectById_('TH_MATCHING_RUNS', 'run_id', run.run_id, run);
+      } catch (rollbackError) {
+        rollbackFailures.push(String(run.run_id || '') + ': ' + rollbackError.message);
+      }
+    });
+    var rollbackMessage = rollbackFailures.length
+      ? ' A reversão das execuções também falhou: ' + rollbackFailures.join('; ') + '.'
+      : '';
+    throw new Error('Não foi possível invalidar as execuções anteriores de matching.' +
+      rollbackMessage + ' Motivo: ' + error.message);
+  }
+
+  return {
+    total_invalidado: updated.length,
+    runs_anteriores: updated
+  };
+}
+
 function saveMatchingModel(payload, criterios) {
   payload = payload || {};
   criterios = Array.isArray(criterios) ? criterios : [];
   requireFields_(payload, ['modelo_id', 'nome_modelo'], 'Modelo de matching');
   assertNonNegativeNumber_(payload.score_minimo_recomendado, 'score_minimo_recomendado', true);
+  if (normalizeBoolean_(payload.normalizar_para_100) !== false && Number(payload.score_minimo_recomendado || 0) > 100) {
+    throw new Error('score_minimo_recomendado não pode ultrapassar 100 em um modelo normalizado.');
+  }
+  criterios.forEach(function (criterion) {
+    requireFields_(criterion, ['criterio_nome', 'campo_talento', 'campo_vaga', 'tipo_comparacao'], 'Critério do modelo');
+    assertNonNegativeNumber_(criterion.peso, 'peso', false);
+    if (isSensitiveMatchingField_(criterion.campo_talento)) {
+      throw new Error('Dados sensíveis não podem fazer parte do modelo-base. Configure "' + criterion.criterio_nome + '" como critério explícito da vaga.');
+    }
+  });
 
   return withScriptLock_(function () {
     var modelId = String(payload.modelo_id).trim();
@@ -75,20 +126,15 @@ function saveMatchingModel(payload, criterios) {
     cleanModel.normalizar_para_100 = valueIsBlank_(cleanModel.normalizar_para_100) ? 'SIM' : cleanModel.normalizar_para_100;
     cleanModel.atualizado_em = now;
     cleanModel.atualizado_por = user;
-    if (before) {
-      updateObjectById_('TH_MATCHING_MODELOS', 'modelo_id', modelId, cleanModel, modelFields);
-    } else {
-      cleanModel.criado_em = now;
-      cleanModel.criado_por = user;
-      appendObject_('TH_MATCHING_MODELOS', cleanModel);
-    }
-
-    var otherCriteria = getSheetObjects_('TH_MATCHING_MODELO_CRITERIOS', { raw: true }).filter(function (criterion) {
+    var allCriteriaBefore = getSheetObjects_('TH_MATCHING_MODELO_CRITERIOS', { raw: true });
+    var otherCriteria = allCriteriaBefore.filter(function (criterion) {
       return String(criterion.modelo_id || '') !== modelId;
     });
+    var modelRunsBefore = getSheetObjects_('TH_MATCHING_RUNS', { raw: true }).filter(function (run) {
+      return String(run.modelo_id || '') === modelId && String(run.status_run || '') === 'Concluído';
+    });
+    var invalidationAttempted = false;
     var cleanCriteria = criterios.map(function (criterion, index) {
-      requireFields_(criterion, ['criterio_nome', 'campo_talento', 'campo_vaga', 'tipo_comparacao'], 'Critério do modelo');
-      assertNonNegativeNumber_(criterion.peso, 'peso', false);
       return {
         modelo_criterio_id: criterion.modelo_criterio_id || generateId_('MCR_'),
         modelo_id: modelId,
@@ -103,38 +149,87 @@ function saveMatchingModel(payload, criterios) {
         ordem: index + 1
       };
     });
-    replaceSheetRows_('TH_MATCHING_MODELO_CRITERIOS', otherCriteria.concat(cleanCriteria));
+    try {
+      if (before) {
+        updateObjectById_('TH_MATCHING_MODELOS', 'modelo_id', modelId, cleanModel, modelFields);
+      } else {
+        cleanModel.criado_em = now;
+        cleanModel.criado_por = user;
+        appendObject_('TH_MATCHING_MODELOS', cleanModel);
+      }
+      replaceSheetRows_('TH_MATCHING_MODELO_CRITERIOS', otherCriteria.concat(cleanCriteria));
+      invalidationAttempted = true;
+      invalidateMatchingRuns_(function (run) {
+        return String(run.modelo_id || '') === modelId;
+      }, 'Modelo de matching alterado. Execute uma nova análise antes de gerar uma shortlist.');
+    } catch (error) {
+      var rollbackFailures = [];
+      try {
+        if (before) updateObjectById_('TH_MATCHING_MODELOS', 'modelo_id', modelId, before);
+        else deleteObjectById_('TH_MATCHING_MODELOS', 'modelo_id', modelId);
+        replaceSheetRows_('TH_MATCHING_MODELO_CRITERIOS', allCriteriaBefore);
+      } catch (rollbackError) {
+        rollbackFailures.push(rollbackError.message);
+      }
+      if (invalidationAttempted) {
+        modelRunsBefore.forEach(function (run) {
+          try {
+            updateObjectById_('TH_MATCHING_RUNS', 'run_id', run.run_id, run);
+          } catch (runRollbackError) {
+            rollbackFailures.push('execução ' + run.run_id + ': ' + runRollbackError.message);
+          }
+        });
+      }
+      var rollbackMessage = rollbackFailures.length
+        ? ' A reversão também falhou: ' + rollbackFailures.join('; ') + '.'
+        : '';
+      throw new Error('Não foi possível salvar o modelo de matching.' + rollbackMessage + ' Motivo: ' + error.message);
+    }
     writeEntityAudit_(before ? 'UPDATE' : 'CREATE', 'MATCHING_MODELO', modelId, before || {}, cleanModel, 'WEB_APP');
     return serializeForClient_({ modelo: cleanModel, criterios: cleanCriteria });
   });
 }
 
 function runMatching(vagaId, qtdPerfis, modeloId) {
-  var requested = Math.min(Math.max(Number(qtdPerfis || 5), 1), 100);
-  var job = getObjectById_('TH_VAGAS', 'vaga_id', vagaId, { raw: true });
-  if (!job) throw new Error('Vaga não encontrada: ' + vagaId);
-  if (['Preenchida', 'Encerrada sem contratação', 'Cancelada'].indexOf(String(job.status_vaga || '')) !== -1) {
-    throw new Error('Não é possível executar matchmaking para uma vaga encerrada.');
-  }
+  var requestedNumber = Number(qtdPerfis || 5);
+  if (!Number.isFinite(requestedNumber)) throw new Error('Quantidade de perfis inválida.');
+  var requested = Math.min(Math.max(Math.floor(requestedNumber), 1), 100);
 
   var config = getConfigMap_();
   var selectedModelId = String(modeloId || config.MATCHING_MODELO_PADRAO || '').trim();
-  var model = getObjectById_('TH_MATCHING_MODELOS', 'modelo_id', selectedModelId, { raw: true });
-  if (!model) throw new Error('Modelo de matching não encontrado: ' + selectedModelId);
-  var modelCriteria = getSheetObjects_('TH_MATCHING_MODELO_CRITERIOS', { raw: true }).filter(function (criterion) {
-    return String(criterion.modelo_id || '') === selectedModelId && normalizeBoolean_(criterion.ativo) !== false;
-  });
-  var vacancyCriteria = getSheetObjects_('TH_VAGA_CRITERIOS', { raw: true }).filter(function (criterion) {
-    return String(criterion.vaga_id || '') === String(vagaId) && normalizeBoolean_(criterion.ativo) !== false;
-  });
-  var aptTalents = getSheetObjects_('VW_TALENTOS_APTOS', { raw: true }).filter(function (talent) {
-    return String(talent.apto_talent_hub || '') === 'SIM';
-  });
-  var eligibleTalents = aptTalents.filter(function (talent) {
-    return String(talent.status_pool || '') === 'Disponível';
-  });
+  var job;
+  var model;
+  var modelCriteria;
+  var vacancyCriteria;
+  var aptTalents;
+  var eligibleTalents;
 
   return withScriptLock_(function () {
+    job = getObjectById_('TH_VAGAS', 'vaga_id', vagaId, { raw: true });
+    if (!job) throw new Error('Vaga não encontrada: ' + vagaId);
+    if (['Preenchida', 'Encerrada sem contratação', 'Cancelada'].indexOf(String(job.status_vaga || '')) !== -1) {
+      throw new Error('Não é possível executar matchmaking para uma vaga encerrada.');
+    }
+    model = getObjectById_('TH_MATCHING_MODELOS', 'modelo_id', selectedModelId, { raw: true });
+    if (!model) throw new Error('Modelo de matching não encontrado: ' + selectedModelId);
+    if (normalizeBoolean_(model.ativo) === false) {
+      throw new Error('O modelo de matching selecionado está inativo. Reative-o antes de executar uma nova análise.');
+    }
+    modelCriteria = getSheetObjects_('TH_MATCHING_MODELO_CRITERIOS', { raw: true }).filter(function (criterion) {
+      return String(criterion.modelo_id || '') === selectedModelId &&
+        normalizeBoolean_(criterion.ativo) !== false &&
+        !isSensitiveMatchingField_(criterion.campo_talento);
+    });
+    vacancyCriteria = getSheetObjects_('TH_VAGA_CRITERIOS', { raw: true }).filter(function (criterion) {
+      return String(criterion.vaga_id || '') === String(vagaId) && normalizeBoolean_(criterion.ativo) !== false;
+    });
+    aptTalents = getSheetObjects_('VW_TALENTOS_APTOS', { raw: true }).filter(function (talent) {
+      return String(talent.apto_talent_hub || '') === 'SIM';
+    });
+    eligibleTalents = aptTalents.filter(function (talent) {
+      return String(talent.status_pool || '') === 'Disponível';
+    });
+
     var runId = generateId_('RUN_');
     var now = nowIso_();
     var user = currentUser_();
@@ -218,6 +313,18 @@ function runMatching(vagaId, qtdPerfis, modeloId) {
 function getMatchingResults(runId) {
   var run = getObjectById_('TH_MATCHING_RUNS', 'run_id', runId, { raw: true });
   if (!run) throw new Error('Execução de matching não encontrada: ' + runId);
+  var job = getObjectById_('TH_VAGAS', 'vaga_id', run.vaga_id, { raw: true });
+  var jobShortlists = getSheetObjects_('TH_SHORTLISTS', { raw: true }).filter(function (shortlist) {
+    return String(shortlist.vaga_id || '') === String(run.vaga_id || '');
+  });
+  if (job) {
+    job.total_shortlists = jobShortlists.length;
+    if (jobShortlists.length) {
+      job.rodada_atual = Math.max.apply(null, jobShortlists.map(function (shortlist) {
+        return Number(shortlist.rodada || 0);
+      }));
+    }
+  }
   var talents = indexBy_('VW_TALENTOS_APTOS', 'pessoa_id');
   var results = getSheetObjects_('TH_MATCHING_RESULTADOS', { raw: true }).filter(function (result) {
     return String(result.run_id || '') === String(runId);
@@ -237,7 +344,7 @@ function getMatchingResults(runId) {
   results.sort(function (a, b) { return Number(a.ordem_ranking || 0) - Number(b.ordem_ranking || 0); });
   return serializeForClient_({
     run: run,
-    vaga: getObjectById_('TH_VAGAS', 'vaga_id', run.vaga_id, { raw: true }),
+    vaga: job,
     resultados: results
   });
 }
@@ -283,9 +390,12 @@ function evaluateTalentForJob_(talent, job, modelCriteria, vacancyCriteria, mode
   var totalScore = totalWeight > 0 ? (normalize ? earned / totalWeight * 100 : earned) : 0;
   totalScore = Math.round(totalScore * 100) / 100;
   var categoryTotal = function (key) { return Math.round(Number(categoryScores[key] || 0) * 100) / 100; };
+  var scoreLabel = normalize
+    ? 'Aderência de ' + totalScore.toFixed(1).replace('.', ',') + '%. '
+    : 'Pontuação de ' + totalScore.toFixed(1).replace('.', ',') + '. ';
   var justification = exclusions.length
     ? 'Eliminado por critério obrigatório: ' + exclusions.join(', ') + '.'
-    : 'Aderência de ' + totalScore.toFixed(1).replace('.', ',') + '%. ' + (attended.length ? 'Atende: ' + attended.slice(0, 5).join(', ') + '.' : 'Nenhum critério pontuado.');
+    : scoreLabel + (attended.length ? 'Atende: ' + attended.slice(0, 5).join(', ') + '.' : 'Nenhum critério pontuado.');
 
   return {
     pessoa_id: talent.pessoa_id,
@@ -368,8 +478,14 @@ function evaluateVacancyCriterion_(talent, criterion) {
   var operator = String(criterion.operador || 'igual');
   var left = normalizeText_(actual);
   var right = normalizeText_(expected);
+  var actualBoolean = normalizeBoolean_(actual);
+  var expectedBoolean = normalizeBoolean_(expected);
   if (operator === 'vazio') return valueIsBlank_(actual);
   if (operator === 'nao_vazio') return !valueIsBlank_(actual);
+  if (['igual', 'diferente'].indexOf(operator) !== -1 &&
+    actualBoolean !== null && expectedBoolean !== null) {
+    return operator === 'igual' ? actualBoolean === expectedBoolean : actualBoolean !== expectedBoolean;
+  }
   if (operator === 'igual') return left === right;
   if (operator === 'diferente') return left !== right;
   if (operator === 'contem') return !!right && left.indexOf(right) !== -1;
@@ -379,11 +495,31 @@ function evaluateVacancyCriterion_(talent, criterion) {
     var expectedList = splitList_(expected);
     return expectedList.some(function (item) { return actualList.indexOf(item) !== -1; });
   }
-  if (operator === 'maior_igual') return Number(actual) >= Number(expected);
-  if (operator === 'menor_igual') return Number(actual) <= Number(expected);
+  if (operator === 'maior_igual' || operator === 'menor_igual') {
+    if (valueIsBlank_(actual) || valueIsBlank_(expected)) return false;
+    var actualNumber = Number(actual);
+    var expectedNumber = Number(expected);
+    if (!Number.isFinite(actualNumber) || !Number.isFinite(expectedNumber)) return false;
+    return operator === 'maior_igual'
+      ? actualNumber >= expectedNumber
+      : actualNumber <= expectedNumber;
+  }
   if (operator === 'entre') {
+    if (valueIsBlank_(actual) || valueIsBlank_(expected)) return false;
+    var actualBetween = Number(actual);
     var bounds = splitList_(expected).map(Number);
-    return bounds.length >= 2 && Number(actual) >= Math.min(bounds[0], bounds[1]) && Number(actual) <= Math.max(bounds[0], bounds[1]);
+    if (!Number.isFinite(actualBetween) || bounds.length < 2 ||
+      !Number.isFinite(bounds[0]) || !Number.isFinite(bounds[1])) {
+      return false;
+    }
+    return actualBetween >= Math.min(bounds[0], bounds[1]) && actualBetween <= Math.max(bounds[0], bounds[1]);
   }
   return false;
+}
+
+function isSensitiveMatchingField_(field) {
+  var sensitive = ['genero', 'cor_etnia', 'pcd_bol', 'data_nascimento', 'idade'];
+  return String(field || '').split('/').some(function (part) {
+    return sensitive.indexOf(normalizeText_(part)) !== -1;
+  });
 }

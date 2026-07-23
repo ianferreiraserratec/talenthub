@@ -157,7 +157,7 @@ function regenerateTalentView_() {
     if (!termActive) reason = 'TERMO_CANCELADO_OU_INEXISTENTE';
     else if (!updatedWithinWindow) reason = 'CADASTRO_DESATUALIZADO';
 
-    var statusPool = derivePoolStatus_(apt, talent, personProcesses, !!activeHireByPerson[personId]);
+    var statusPool = derivePoolStatus_(apt, talent, personProcesses, !!activeHireByPerson[personId], reason);
     var blockedUntil = personProcesses.filter(function (process) {
       return process.status_processo === 'Bloqueado' && process.data_limite_bloqueio;
     }).map(function (process) { return process.data_limite_bloqueio; }).sort().pop() || '';
@@ -210,11 +210,11 @@ function regenerateTalentView_() {
   return { ok: true, total: viewRows.length };
 }
 
-function derivePoolStatus_(apt, talent, processes, hasActiveHire) {
-  if (!apt) return 'Inelegível';
+function derivePoolStatus_(apt, talent, processes, hasActiveHire, notAptReason) {
   if (hasActiveHire) return 'Contratado';
   if (processes.some(function (process) { return process.status_processo === 'Bloqueado'; })) return 'Bloqueado';
   if (processes.length) return 'Em processo';
+  if (!apt) return notAptReason === 'CADASTRO_DESATUALIZADO' ? 'Inativo' : 'Inelegível';
   if (String(talent.status_pool || '') === 'Carência') return 'Carência';
   if (normalizeBoolean_(talent.disponivel_para_oportunidades) === false || String(talent.status_pool || '') === 'Inativo') return 'Inativo';
   return 'Disponível';

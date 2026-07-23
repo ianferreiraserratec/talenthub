@@ -11,7 +11,11 @@ function regenerateDashboard_() {
   var processes = getSheetObjects_('TH_PROCESSOS', { raw: true });
   var hires = getSheetObjects_('TH_CONTRATACOES', { raw: true });
   var activeProcessStatuses = ['Pré-selecionado', 'Aguardando confirmação', 'Bloqueado', 'Enviado à empresa', 'Aguardando retorno', 'Entrevista', 'Proposta'];
+  var activeHires = hires.filter(function (hire) {
+    return ['Ativa', 'Em acompanhamento'].indexOf(String(hire.status_contratacao || '')) !== -1;
+  });
   var salaries = hires.map(function (hire) { return parseMoney_(hire.salario_contratacao); }).filter(function (value) { return value !== null; });
+  var activeSalaries = activeHires.map(function (hire) { return parseMoney_(hire.salario_contratacao); }).filter(function (value) { return value !== null; });
   var timestamp = nowIso_();
 
   var definitions = [
@@ -23,6 +27,7 @@ function regenerateDashboard_() {
     ['talentos_disponiveis', countBy_(talents, 'status_pool', 'Disponível'), 'Talentos', 'Talentos disponíveis'],
     ['talentos_em_processo', countBy_(talents, 'status_pool', 'Em processo'), 'Talentos', 'Talentos em processo'],
     ['talentos_bloqueados', countBy_(talents, 'status_pool', 'Bloqueado'), 'Talentos', 'Talentos bloqueados'],
+    ['talentos_inativos', countBy_(talents, 'status_pool', 'Inativo'), 'Talentos', 'Talentos temporariamente fora do pool'],
     ['talentos_inelegiveis', countBy_(talents, 'status_pool', 'Inelegível'), 'Talentos', 'Talentos inelegíveis'],
     ['clientes_total', clients.length, 'Clientes', 'Clientes cadastrados'],
     ['clientes_ativos', countBy_(clients, 'status_cliente', 'Ativo'), 'Clientes', 'Clientes ativos'],
@@ -34,8 +39,10 @@ function regenerateDashboard_() {
     ['processos_ativos', processes.filter(function (row) { return activeProcessStatuses.indexOf(row.status_processo) !== -1; }).length, 'Processos', 'Processos ativos'],
     ['perfis_enviados', processes.filter(function (row) { return !valueIsBlank_(row.data_envio_empresa) || ['Enviado à empresa', 'Aguardando retorno', 'Entrevista', 'Proposta', 'Contratado'].indexOf(row.status_processo) !== -1; }).length, 'Processos', 'Perfis enviados'],
     ['contratacoes_total', hires.length, 'Impacto', 'Contratações registradas'],
+    ['contratacoes_ativas', activeHires.length, 'Impacto', 'Contratações ativas ou em acompanhamento'],
     ['salario_medio_contratacoes', salaries.length ? salaries.reduce(function (sum, value) { return sum + value; }, 0) / salaries.length : 0, 'Impacto', 'Salário médio'],
-    ['massa_salarial_gerada', salaries.reduce(function (sum, value) { return sum + value; }, 0), 'Impacto', 'Massa salarial mensal']
+    ['massa_salarial_gerada', salaries.reduce(function (sum, value) { return sum + value; }, 0), 'Impacto', 'Soma histórica dos salários mensais registrados'],
+    ['massa_salarial_ativa', activeSalaries.reduce(function (sum, value) { return sum + value; }, 0), 'Impacto', 'Massa salarial mensal ativa estimada']
   ];
   var rows = definitions.map(function (definition) {
     return { indicador: definition[0], valor: definition[1], grupo: definition[2], descricao: definition[3], atualizado_em: timestamp };
@@ -46,7 +53,18 @@ function regenerateDashboard_() {
 
 function getDashboard() {
   var rows = getSheetObjects_('VW_DASHBOARD', { raw: true });
-  if (!rows.length) {
+  var present = {};
+  rows.forEach(function (row) { present[String(row.indicador || '')] = true; });
+  var requiredIndicators = [
+    'talentos_aptos',
+    'talentos_disponiveis',
+    'talentos_inativos',
+    'clientes_ativos',
+    'vagas_abertas',
+    'contratacoes_ativas',
+    'massa_salarial_ativa'
+  ];
+  if (!rows.length || requiredIndicators.some(function (indicator) { return !present[indicator]; })) {
     regenerateDashboard_();
     rows = getSheetObjects_('VW_DASHBOARD', { raw: true });
   }

@@ -38,6 +38,7 @@ for (const match of indexHtml.matchAll(/include\('([^']+)'\)/g)) {
 }
 
 const allHtml = htmlFiles.map(file => fs.readFileSync(path.join(source, file), 'utf8')).join('\n');
+const scriptsHtml = fs.readFileSync(path.join(source, 'Scripts.html'), 'utf8');
 assert(
   /document\.readyState\s*===\s*['"]loading['"]/.test(allHtml),
   'A inicialização do frontend deve considerar quando DOMContentLoaded já ocorreu.'
@@ -49,6 +50,19 @@ assert(
 const ids = [...allHtml.matchAll(/(?:\s|<)id="([^"]+)"/g)].map(match => match[1]);
 const duplicateIds = ids.filter((id, index) => ids.indexOf(id) !== index);
 assert(duplicateIds.length === 0, `IDs HTML duplicados: ${[...new Set(duplicateIds)].join(', ')}`);
+assert(
+  /rule-row rule-row-vacancy[\s\S]{0,3000}data-field="ativo" type="checkbox"/.test(scriptsHtml),
+  'O editor de critérios da vaga deve expor o estado ativo/inativo.'
+);
+assert(
+  /function collectVacancyCriteria\(\)[\s\S]{0,1500}field\.type === 'checkbox'[\s\S]{0,500}field\.checked \? 'SIM' : 'NAO'/.test(scriptsHtml),
+  'A coleta dos critérios da vaga deve preservar o estado ativo/inativo.'
+);
+assert(
+  /matchingResultRequest/.test(scriptsHtml) &&
+  /resultRequestId !== App\.matchingResultRequest/.test(scriptsHtml),
+  'O carregamento de resultados do matching deve ignorar respostas assíncronas obsoletas.'
+);
 
 const allGs = gsFiles.map(file => fs.readFileSync(path.join(source, file), 'utf8')).join('\n');
 assert(

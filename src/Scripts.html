@@ -15,6 +15,10 @@
     currentShortlistId: '',
     currentShortlist: null,
     currentTalentId: '',
+    matchingRequest: 0,
+    matchingResultRequest: 0,
+    currentMatchingRunId: '',
+    shortlistDetailRequest: 0,
     busyCount: 0,
     started: false
   };
@@ -115,7 +119,7 @@
     const screen = document.getElementById('screen-' + route);
     document.getElementById('page-title').textContent = screen ? screen.dataset.title : 'Talent Hub';
     document.getElementById('sidebar').classList.remove('open');
-    loadRoute(route);
+    return loadRoute(route);
   }
 
   async function loadRoute(route, force) {
@@ -161,12 +165,13 @@
     text('metric-clientes-total', `${formatNumber(m.clientes_total)} cadastrados`);
     text('metric-vagas-abertas', formatNumber(m.vagas_abertas));
     text('metric-vagas-processo', `${formatNumber(m.vagas_em_processo)} em processo`);
-    text('metric-contratacoes', formatNumber(m.contratacoes_total));
-    text('metric-massa-salarial', `Massa salarial: ${formatCurrency(m.massa_salarial_gerada)}`);
+    text('metric-contratacoes', formatNumber(m.contratacoes_ativas));
+    text('metric-massa-salarial', `Massa salarial ativa: ${formatCurrency(m.massa_salarial_ativa)}`);
     text('health-cadastro', formatNumber(m.talentos_cadastro_atualizado_90d));
     text('health-termo', formatNumber(m.talentos_com_termo_ativo));
     text('health-processo', formatNumber(m.talentos_em_processo));
     text('health-bloqueados', formatNumber(m.talentos_bloqueados));
+    text('health-inativos', formatNumber(m.talentos_inativos));
     text('health-inelegiveis', formatNumber(m.talentos_inelegiveis));
     text('dashboard-updated', data.atualizado_em ? `Atualizado em ${formatDateTime(data.atualizado_em)}` : 'Aguardando atualização.');
     refreshContextCards();
@@ -310,6 +315,9 @@
     form.reset();
     form.elements.qtd_posicoes.value = 1;
     const job = App.jobs.find(item => item.vaga_id === jobId);
+    const creationStatuses = ['Rascunho', 'Briefing recebido', 'Validando pool', 'Aberta'];
+    const allStatuses = creationStatuses.concat(['Shortlist enviada', 'Em processo', 'Preenchida', 'Encerrada sem contratação', 'Cancelada']);
+    form.elements.status_vaga.innerHTML = optionList(job ? allStatuses : creationStatuses, job ? job.status_vaga : 'Rascunho');
     document.getElementById('job-form-title').textContent = job ? 'Editar vaga' : 'Nova vaga';
     if (job) fillForm(form, job);
     document.getElementById('job-form-dialog').showModal();
@@ -323,16 +331,23 @@
   }
 
   async function loadMatching(vagaId) {
+    clearMatchingResults();
+    const requestId = ++App.matchingRequest;
     const selectedBefore = vagaId || (document.getElementById('matching-job-select') || {}).value || '';
     const setup = await server('getMatchingSetup', selectedBefore);
+    if (requestId !== App.matchingRequest) return;
     App.matchingSetup = setup;
     const jobSelect = document.getElementById('matching-job-select');
     jobSelect.innerHTML = '<option value="">Selecione uma vaga</option>' + (setup.vagas || []).map(job => `<option value="${escapeAttr(job.vaga_id)}">${escapeHtml(job.titulo_vaga)}${job.nome_empresa ? ` · ${escapeHtml(job.nome_empresa)}` : ''}</option>`).join('');
     jobSelect.value = setup.vaga_id || selectedBefore;
     const modelSelect = document.getElementById('matching-model-select');
     const currentModel = modelSelect.value;
-    modelSelect.innerHTML = '<option value="">Selecione um modelo</option>' + (setup.modelos || []).filter(model => isYes(model.ativo)).map(model => `<option value="${escapeAttr(model.modelo_id)}">${escapeHtml(model.nome_modelo)} · v${escapeHtml(model.versao || '1.0')}</option>`).join('');
-    modelSelect.value = currentModel && (setup.modelos || []).some(model => model.modelo_id === currentModel) ? currentModel : ((setup.modelos || [])[0] || {}).modelo_id || '';
+    const models = setup.modelos || [];
+    const firstActiveModel = models.find(model => isYes(model.ativo));
+    modelSelect.innerHTML = '<option value="">Selecione um modelo</option>' + models.map(model => `<option value="${escapeAttr(model.modelo_id)}">${escapeHtml(model.nome_modelo)} · v${escapeHtml(model.versao || '1.0')}${isYes(model.ativo) ? '' : ' · inativo'}</option>`).join('');
+    modelSelect.value = currentModel && models.some(model => model.modelo_id === currentModel)
+      ? currentModel
+      : (firstActiveModel || models[0] || {}).modelo_id || '';
     App.vacancyCriteria = setup.criterios_vaga || [];
     renderMatchingCriteriaSummary();
     renderMatchingRuns(setup.execucoes || []);
@@ -347,9 +362,12 @@
       return;
     }
     const criteria = App.vacancyCriteria || [];
-    const eliminatory = criteria.filter(item => ['Exclusivo', 'Obrigatório'].includes(item.tipo_regra)).length;
-    const weighted = criteria.filter(item => ['Prioritário', 'Desejável'].includes(item.tipo_regra)).length;
-    container.innerHTML = `<strong>${escapeHtml(job.titulo_vaga)}</strong><span>${criteria.length} critério${criteria.length === 1 ? '' : 's'} específico${criteria.length === 1 ? '' : 's'} · ${eliminatory} eliminatório${eliminatory === 1 ? '' : 's'} · ${weighted} com peso.</span>`;
+    const activeCriteria = criteria.filter(item => valueAsBoolean(item.ativo, true));
+    const inactiveCount = criteria.length - activeCriteria.length;
+    const eliminatory = activeCriteria.filter(item => ['Exclusivo', 'Obrigatório'].includes(item.tipo_regra)).length;
+    const weighted = activeCriteria.filter(item => ['Prioritário', 'Desejável'].includes(item.tipo_regra)).length;
+    const inactiveLabel = inactiveCount ? ` · ${inactiveCount} inativo${inactiveCount === 1 ? '' : 's'}` : '';
+    container.innerHTML = `<strong>${escapeHtml(job.titulo_vaga)}</strong><span>${activeCriteria.length} critério${activeCriteria.length === 1 ? '' : 's'} ativo${activeCriteria.length === 1 ? '' : 's'} · ${eliminatory} eliminatório${eliminatory === 1 ? '' : 's'} · ${weighted} com peso${inactiveLabel}.</span>`;
   }
 
   function renderMatchingRuns(items) {
@@ -368,25 +386,43 @@
     const profileCount = Number(document.getElementById('matching-profile-count').value || 5);
     if (!jobId) return notify('Selecione uma vaga.', 'error');
     if (!modelId) return notify('Selecione um modelo de score.', 'error');
+    const selectedModel = ((App.matchingSetup || {}).modelos || []).find(model => model.modelo_id === modelId);
+    if (selectedModel && !isYes(selectedModel.ativo)) {
+      return notify('Esse modelo está inativo. Abra “Ajustar modelo”, reative-o e salve antes de executar.', 'error');
+    }
     setBusy(true, 'Calculando aderência dos talentos…');
     try {
       const data = await server('runMatching', jobId, profileCount, modelId);
+      await loadMatching(jobId);
       App.matchingResults = data;
       renderMatchingResults(data);
-      await loadMatching(jobId);
       notify('Matchmaking concluído.');
     } catch (error) { notify(error.message, 'error'); }
     finally { setBusy(false); }
   }
 
   async function loadMatchingResult(runId) {
+    const requestId = ++App.matchingRequest;
+    const resultRequestId = ++App.matchingResultRequest;
+    App.currentMatchingRunId = String(runId || '');
     setBusy(true, 'Carregando ranking…');
     try {
       const data = await server('getMatchingResults', runId);
+      if (
+        requestId !== App.matchingRequest ||
+        resultRequestId !== App.matchingResultRequest ||
+        App.currentMatchingRunId !== String(runId || '')
+      ) return;
       App.matchingResults = data;
       renderMatchingResults(data);
       renderMatchingRuns((App.matchingSetup || {}).execucoes || []);
-    } catch (error) { notify(error.message, 'error'); }
+    } catch (error) {
+      if (
+        requestId === App.matchingRequest &&
+        resultRequestId === App.matchingResultRequest &&
+        App.currentMatchingRunId === String(runId || '')
+      ) notify(error.message, 'error');
+    }
     finally { setBusy(false); }
   }
 
@@ -399,18 +435,31 @@
     document.getElementById('matching-select-all').checked = false;
     text('matching-results-title', data && data.vaga ? data.vaga.titulo_vaga : 'Resultado do ranking');
     text('matching-results-summary', results.length ? `${results.length} talentos avaliados · ${formatNumber(run.total_recomendados)} recomendados · ${formatDateTime(run.executado_em)}` : 'Nenhum resultado nesta execução.');
+    const runAllowsSelection = run.status_run === 'Concluído';
+    document.getElementById('matching-select-all').disabled = !runAllowsSelection;
     body.innerHTML = results.map(result => {
-      const selectable = result.status_resultado !== 'Selecionado para shortlist' && result.recomendado === 'SIM';
       const excluded = !!result.criterios_exclusao;
+      const selectable = runAllowsSelection && result.status_resultado !== 'Selecionado para shortlist' && !excluded;
+      const statusLabel = excluded
+        ? 'Eliminado'
+        : (result.status_resultado === 'Descartado' ? 'Abaixo do corte' : result.status_resultado);
       return `<tr>
         <td><input class="matching-result-check" type="checkbox" value="${escapeAttr(result.resultado_id)}" ${selectable ? '' : 'disabled'} aria-label="Selecionar ${escapeAttr(result.nome)}"></td>
         <td><strong>#${formatNumber(result.ordem_ranking)}</strong></td>
         <td><div class="primary-cell"><strong>${escapeHtml(result.nome || result.pessoa_id)}</strong><small>${escapeHtml([result.area_interesse_principal, result.senioridade, result.cidade, result.uf].filter(Boolean).join(' · '))}</small></div></td>
         <td><span class="score-pill">${Number(result.score_total || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}</span></td>
         <td><div class="criteria-text">${escapeHtml(result.justificativa || 'Sem justificativa.')}<small>${result.criterios_nao_atendidos ? `Não atende: ${escapeHtml(result.criterios_nao_atendidos)}` : ''}</small></div></td>
-        <td><span class="status-badge ${excluded ? 'status-negative' : statusClass(result.status_resultado)}">${escapeHtml(excluded ? 'Eliminado' : result.status_resultado)}</span></td>
+        <td><span class="status-badge ${excluded ? 'status-negative' : statusClass(result.status_resultado)}">${escapeHtml(statusLabel)}</span></td>
       </tr>`;
     }).join('');
+  }
+
+  function clearMatchingResults() {
+    App.matchingRequest += 1;
+    App.matchingResultRequest += 1;
+    App.currentMatchingRunId = '';
+    App.matchingResults = null;
+    renderMatchingResults(null);
   }
 
   function updateMatchingSelection() {
@@ -440,10 +489,11 @@
     else container.innerHTML = App.matchingModelCriteria.map((criterion, index) => `
       <div class="rule-row" data-index="${index}">
         <label><span>Critério</span><input data-field="criterio_nome" value="${escapeAttr(criterion.criterio_nome || '')}" required></label>
-        <label><span>Campo do talento</span><select data-field="campo_talento">${matchingTalentFieldOptions(criterion.campo_talento)}</select></label>
+        <label><span>Campo do talento</span><select data-field="campo_talento">${matchingTalentFieldOptions(criterion.campo_talento, false)}</select></label>
         <label><span>Campo da vaga</span><input data-field="campo_vaga" value="${escapeAttr(criterion.campo_vaga || '')}" placeholder="area_vaga" required></label>
         <label><span>Comparação</span><select data-field="tipo_comparacao">${optionList(['igual', 'contem', 'intersecao_lista', 'salario_compativel'], criterion.tipo_comparacao)}</select></label>
         <label><span>Peso</span><input data-field="peso" type="number" min="0" value="${escapeAttr(criterion.peso == null ? 0 : criterion.peso)}"></label>
+        <label class="check-field"><input data-field="ativo" type="checkbox" ${valueAsBoolean(criterion.ativo, true) ? 'checked' : ''}><span>Ativo</span></label>
         <button type="button" class="icon-button rule-remove model-rule-remove" aria-label="Remover critério">×</button>
       </div>`).join('');
   }
@@ -452,9 +502,12 @@
     return [...document.querySelectorAll('#matching-model-criteria-list .rule-row')].map((row, index) => {
       const original = App.matchingModelCriteria[index] || {};
       const item = Object.assign({}, original);
-      row.querySelectorAll('[data-field]').forEach(field => { item[field.dataset.field] = field.value.trim(); });
+      row.querySelectorAll('[data-field]').forEach(field => {
+        item[field.dataset.field] = field.type === 'checkbox'
+          ? (field.checked ? 'SIM' : 'NAO')
+          : field.value.trim();
+      });
       item.modo = item.modo || 'pontuacao';
-      item.ativo = 'SIM';
       return item;
     });
   }
@@ -477,11 +530,12 @@
     else container.innerHTML = App.vacancyCriteria.map((criterion, index) => `
       <div class="rule-row rule-row-vacancy" data-index="${index}">
         <label><span>Critério</span><input data-field="criterio_nome" value="${escapeAttr(criterion.criterio_nome || '')}" required></label>
-        <label><span>Campo do talento</span><select data-field="campo_talento">${matchingTalentFieldOptions(criterion.campo_talento)}</select></label>
+        <label><span>Campo do talento</span><select data-field="campo_talento">${matchingTalentFieldOptions(criterion.campo_talento, true)}</select></label>
         <label><span>Regra</span><select data-field="tipo_regra">${optionList(['Exclusivo', 'Obrigatório', 'Prioritário', 'Desejável', 'Informativo'], criterion.tipo_regra)}</select></label>
         <label><span>Operador</span><select data-field="operador">${optionList(['igual', 'diferente', 'contem', 'nao_contem', 'intersecao_lista', 'maior_igual', 'menor_igual', 'entre', 'vazio', 'nao_vazio'], criterion.operador)}</select></label>
         <label><span>Valor esperado</span><input data-field="valor_esperado" value="${escapeAttr(criterion.valor_esperado || '')}"></label>
         <label><span>Peso</span><input data-field="peso_override" type="number" min="0" value="${escapeAttr(criterion.peso_override || '')}"></label>
+        <label class="check-field"><input data-field="ativo" type="checkbox" ${valueAsBoolean(criterion.ativo, true) ? 'checked' : ''}><span>Ativo</span></label>
         <button type="button" class="icon-button rule-remove vacancy-rule-remove" aria-label="Remover critério">×</button>
       </div>`).join('');
   }
@@ -490,14 +544,23 @@
     return [...document.querySelectorAll('#vacancy-criteria-list .rule-row')].map((row, index) => {
       const original = App.vacancyCriteria[index] || {};
       const item = Object.assign({}, original);
-      row.querySelectorAll('[data-field]').forEach(field => { item[field.dataset.field] = field.value.trim(); });
-      item.ativo = 'SIM';
+      row.querySelectorAll('[data-field]').forEach(field => {
+        item[field.dataset.field] = field.type === 'checkbox'
+          ? (field.checked ? 'SIM' : 'NAO')
+          : field.value.trim();
+      });
       return item;
     });
   }
 
-  function matchingTalentFieldOptions(selected) {
-    return ((App.matchingSetup || {}).campos_talento || []).map(field => `<option value="${escapeAttr(field.valor)}" ${field.valor === selected ? 'selected' : ''}>${escapeHtml(field.descricao)}</option>`).join('');
+  function matchingTalentFieldOptions(selected, allowSensitive) {
+    const fields = ((App.matchingSetup || {}).campos_talento || [])
+      .filter(field => allowSensitive || field.sensivel !== 'SIM');
+    if (selected && !fields.some(field => field.valor === selected)) {
+      fields.unshift({ valor: selected, descricao: `${selected} · campo configurado`, sensivel: 'NAO' });
+    }
+    return fields
+      .map(field => `<option value="${escapeAttr(field.valor)}" ${field.valor === selected ? 'selected' : ''}>${escapeHtml(field.descricao)}</option>`).join('');
   }
 
   function optionList(values, selected) {
@@ -506,13 +569,15 @@
 
   function openCreateShortlistDialog() {
     const selected = [...document.querySelectorAll('.matching-result-check:checked')].map(input => input.value);
-    if (!selected.length || !App.matchingResults) return notify('Selecione talentos recomendados.', 'error');
+    if (!selected.length || !App.matchingResults) return notify('Selecione ao menos um talento não eliminado.', 'error');
     const form = document.getElementById('create-shortlist-form');
     form.reset();
     const job = App.matchingResults.vaga || {};
     form.elements.vaga_id.value = job.vaga_id || '';
     form.elements.result_ids.value = selected.join(',');
-    form.elements.rodada.value = Number(job.rodada_atual || 1);
+    form.elements.rodada.value = Number(job.total_shortlists || 0) > 0
+      ? Number(job.rodada_atual || 0) + 1
+      : 1;
     form.elements.titulo_shortlist.value = `Shortlist — ${job.titulo_vaga || 'Vaga'} — rodada ${form.elements.rodada.value}`;
     text('create-shortlist-summary', `${selected.length} talento${selected.length === 1 ? '' : 's'} selecionado${selected.length === 1 ? '' : 's'} para ${job.titulo_vaga || 'a vaga'}.`);
     document.getElementById('create-shortlist-dialog').showModal();
@@ -528,8 +593,8 @@
     renderShortlistList(items);
     const targetId = preferredId || App.currentShortlistId;
     if (targetId && items.some(item => item.shortlist_id === targetId)) await openShortlistDetail(targetId, true);
-    else if (items.length && !App.currentShortlistId) await openShortlistDetail(items[0].shortlist_id, true);
-    else if (!items.length) clearShortlistDetail();
+    else if (items.length) await openShortlistDetail(items[0].shortlist_id, true);
+    else clearShortlistDetail();
   }
 
   function renderShortlistList(items) {
@@ -544,14 +609,18 @@
   }
 
   async function openShortlistDetail(shortlistId, quiet) {
+    const requestId = ++App.shortlistDetailRequest;
     if (!quiet) setBusy(true, 'Carregando shortlist…');
     try {
       const data = await server('getShortlistDetails', shortlistId);
+      if (requestId !== App.shortlistDetailRequest) return;
       App.currentShortlistId = shortlistId;
       App.currentShortlist = data;
       renderShortlistList(App.shortlists);
       renderShortlistDetail(data);
-    } catch (error) { notify(error.message, 'error'); }
+    } catch (error) {
+      if (requestId === App.shortlistDetailRequest) notify(error.message, 'error');
+    }
     finally { if (!quiet) setBusy(false); }
   }
 
@@ -571,17 +640,35 @@
     text('shortlist-detail-company', client.nome_empresa || 'Cliente não informado');
     text('shortlist-detail-title', shortlist.titulo_shortlist || job.titulo_vaga || 'Shortlist');
     text('shortlist-detail-meta', `${job.titulo_vaga || 'Vaga'} · rodada ${shortlist.rodada || 1} · criada em ${formatDateTime(shortlist.criada_em)}`);
-    document.getElementById('shortlist-detail-status').value = shortlist.status_shortlist || 'Em montagem';
+    const shortlistStatusSelect = document.getElementById('shortlist-detail-status');
+    const allowedShortlistStatuses = [shortlist.status_shortlist].concat(shortlist.transicoes_permitidas || []);
+    Array.from(shortlistStatusSelect.options).forEach(option => {
+      option.disabled = !allowedShortlistStatuses.includes(option.value);
+    });
+    shortlistStatusSelect.value = shortlist.status_shortlist || 'Em montagem';
     const body = document.getElementById('shortlist-items-body');
+    const shortlistIsTerminal = ['Concluída', 'Cancelada'].includes(shortlist.status_shortlist);
+    const terminalProcessStatuses = ['Contratado', 'Recusado pela empresa', 'Recusado pelo candidato', 'Liberado', 'Substituído'];
+    const terminalItemStatuses = ['Removido', 'Liberado', 'Substituído', 'Contratado'];
     body.innerHTML = (data.itens || []).map(item => {
       const process = item.processo || {};
+      const processIsTerminal = terminalProcessStatuses.includes(process.status_processo);
+      const canUpdate = process.status_processo === 'Contratado' ||
+        (!shortlistIsTerminal && (process.transicoes_permitidas || []).length > 0);
+      const canRemove = !shortlistIsTerminal &&
+        !processIsTerminal &&
+        !terminalItemStatuses.includes(item.status_item);
+      const actions = [
+        canUpdate ? `<button class="table-action process-edit" data-process-id="${escapeAttr(item.processo_id)}">Atualizar</button>` : '',
+        canRemove ? `<button class="table-action shortlist-item-remove" data-item-id="${escapeAttr(item.shortlist_item_id)}">Remover</button>` : ''
+      ].filter(Boolean).join(' ');
       return `<tr>
         <td><strong>#${formatNumber(item.ordem_recomendacao)}</strong></td>
         <td><div class="primary-cell"><strong>${escapeHtml(item.nome || item.pessoa_id)}</strong><small>${escapeHtml([item.area_interesse_principal, item.senioridade, item.cidade, item.uf].filter(Boolean).join(' · '))}</small></div></td>
         <td><span class="score-pill">${Number(item.score_total || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}</span></td>
-        <td><span class="status-badge ${statusClass(process.status_processo)}">${escapeHtml(process.status_processo || '—')}</span></td>
+        <td><div class="primary-cell"><span class="status-badge ${statusClass(process.status_processo)}">${escapeHtml(process.status_processo || '—')}</span><small>Item: ${escapeHtml(item.status_item || '—')}</small></div></td>
         <td><div class="primary-cell"><span>${process.data_envio_empresa ? `Enviado ${formatDateTime(process.data_envio_empresa)}` : 'Ainda não enviado'}</span><small>${process.data_resultado ? `Resultado ${formatDateTime(process.data_resultado)}` : ''}</small></div></td>
-        <td><button class="table-action process-edit" data-process-id="${escapeAttr(item.processo_id)}">Atualizar</button> ${process.status_processo === 'Contratado' ? '' : `<button class="table-action shortlist-item-remove" data-item-id="${escapeAttr(item.shortlist_item_id)}">Remover</button>`}</td>
+        <td>${actions || '—'}</td>
       </tr>`;
     }).join('');
   }
@@ -592,9 +679,18 @@
     const process = item.processo || {};
     const form = document.getElementById('process-form');
     form.reset();
-    fillForm(form, process);
+    fillForm(form, Object.assign({}, process, item.contratacao || {}));
     form.elements.processo_id.value = processId;
+    const allowedStatuses = [process.status_processo].concat(process.transicoes_permitidas || []);
+    Array.from(form.elements.status_processo.options).forEach(option => {
+      option.disabled = !allowedStatuses.includes(option.value);
+    });
     form.elements.status_processo.value = process.status_processo || 'Pré-selecionado';
+    const existingHire = !!item.contratacao;
+    Array.from(form.elements.status_contratacao.options).forEach(option => {
+      option.disabled = option.value === 'Substituída' ||
+        (!existingHire && !['Ativa', 'Em acompanhamento'].includes(option.value));
+    });
     text('process-dialog-title', `Atualizar · ${item.nome || item.pessoa_id}`);
     text('process-dialog-summary', `${item.nome || item.pessoa_id} · ${((App.currentShortlist || {}).vaga || {}).titulo_vaga || ''} · etapa atual: ${process.status_processo || '—'}.`);
     toggleHireFields();
@@ -603,7 +699,9 @@
 
   function toggleHireFields() {
     const status = document.getElementById('process-status-select').value;
-    document.getElementById('process-hire-fields').classList.toggle('hidden', status !== 'Contratado');
+    const hired = status === 'Contratado';
+    document.getElementById('process-hire-fields').classList.toggle('hidden', !hired);
+    document.querySelector('#process-form [name="data_contratacao"]').required = hired;
   }
 
   async function updateCurrentShortlistStatus() {
@@ -718,10 +816,10 @@
     document.getElementById('sync-registrations-button').addEventListener('click', () => runSync('syncMatriculas', 'Sincronizando matrículas…'));
     document.getElementById('rebuild-views-button').addEventListener('click', rebuildViews);
     document.getElementById('matching-job-select').addEventListener('change', event => {
-      App.matchingResults = null;
-      renderMatchingResults(null);
+      clearMatchingResults();
       loadMatching(event.target.value);
     });
+    document.getElementById('matching-model-select').addEventListener('change', clearMatchingResults);
     document.getElementById('matching-run-button').addEventListener('click', runMatchingFromUi);
     document.getElementById('matching-edit-model-button').addEventListener('click', openMatchingModelDialog);
     document.getElementById('matching-vacancy-criteria-button').addEventListener('click', openVacancyCriteriaDialog);
@@ -780,9 +878,10 @@
   function bindForms() {
     document.getElementById('config-form').addEventListener('submit', async event => {
       event.preventDefault();
+      const form = event.currentTarget;
       setBusy(true, 'Salvando configuração…');
       try {
-        const config = await server('saveRuntimeConfig', formToObject(event.currentTarget));
+        const config = await server('saveRuntimeConfig', formToObject(form));
         fillConfigForm(config);
         notify('Configuração salva.');
       } catch (error) { notify(error.message, 'error'); }
@@ -791,13 +890,14 @@
 
     document.getElementById('talent-form').addEventListener('submit', async event => {
       event.preventDefault();
-      const payload = formToObject(event.currentTarget);
-      payload.disponivel_para_oportunidades = event.currentTarget.elements.disponivel_para_oportunidades.checked ? 'SIM' : 'NAO';
-      payload.aceita_exclusividade = event.currentTarget.elements.aceita_exclusividade.checked ? 'SIM' : 'NAO';
+      const form = event.currentTarget;
+      const payload = formToObject(form);
+      payload.disponivel_para_oportunidades = form.elements.disponivel_para_oportunidades.checked ? 'SIM' : 'NAO';
+      payload.aceita_exclusividade = form.elements.aceita_exclusividade.checked ? 'SIM' : 'NAO';
       setBusy(true, 'Salvando perfil…');
       try {
         await server('updateTalentoTalentHubData', payload);
-        event.currentTarget.closest('dialog').close();
+        form.closest('dialog').close();
         await Promise.all([loadTalents(), loadDashboard()]);
         notify('Perfil profissional atualizado.');
       } catch (error) { notify(error.message, 'error'); }
@@ -806,12 +906,13 @@
 
     document.getElementById('client-form').addEventListener('submit', async event => {
       event.preventDefault();
-      const payload = formToObject(event.currentTarget);
+      const form = event.currentTarget;
+      const payload = formToObject(form);
       setBusy(true, 'Salvando cliente…');
       try {
         if (payload.cliente_id) await server('updateCliente', payload.cliente_id, payload);
         else await server('createCliente', payload);
-        event.currentTarget.closest('dialog').close();
+        form.closest('dialog').close();
         await Promise.all([loadClients(), loadDashboard()]);
         notify('Cliente salvo com sucesso.');
       } catch (error) { notify(error.message, 'error'); }
@@ -820,12 +921,13 @@
 
     document.getElementById('job-form').addEventListener('submit', async event => {
       event.preventDefault();
-      const payload = formToObject(event.currentTarget);
+      const form = event.currentTarget;
+      const payload = formToObject(form);
       setBusy(true, 'Salvando vaga…');
       try {
         if (payload.vaga_id) await server('updateVaga', payload.vaga_id, payload);
         else await server('createVaga', payload);
-        event.currentTarget.closest('dialog').close();
+        form.closest('dialog').close();
         await Promise.all([loadJobs(), loadDashboard()]);
         notify('Vaga salva com sucesso.');
       } catch (error) { notify(error.message, 'error'); }
@@ -834,15 +936,17 @@
 
     document.getElementById('matching-model-form').addEventListener('submit', async event => {
       event.preventDefault();
-      const payload = formToObject(event.currentTarget);
-      payload.ativo = event.currentTarget.elements.ativo.checked ? 'SIM' : 'NAO';
-      payload.normalizar_para_100 = event.currentTarget.elements.normalizar_para_100.checked ? 'SIM' : 'NAO';
+      const form = event.currentTarget;
+      const payload = formToObject(form);
+      payload.ativo = form.elements.ativo.checked ? 'SIM' : 'NAO';
+      payload.normalizar_para_100 = form.elements.normalizar_para_100.checked ? 'SIM' : 'NAO';
       const criteria = collectModelCriteria();
       if (!criteria.length) return notify('Adicione ao menos um critério ao modelo.', 'error');
       setBusy(true, 'Salvando modelo de score…');
       try {
         await server('saveMatchingModel', payload, criteria);
-        event.currentTarget.closest('dialog').close();
+        form.closest('dialog').close();
+        clearMatchingResults();
         await loadMatching(document.getElementById('matching-job-select').value);
         document.getElementById('matching-model-select').value = payload.modelo_id;
         notify('Modelo de score salvo.');
@@ -852,12 +956,14 @@
 
     document.getElementById('vacancy-criteria-form').addEventListener('submit', async event => {
       event.preventDefault();
-      const jobId = event.currentTarget.elements.vaga_id.value;
+      const form = event.currentTarget;
+      const jobId = form.elements.vaga_id.value;
       const criteria = collectVacancyCriteria();
       setBusy(true, 'Salvando critérios da vaga…');
       try {
         App.vacancyCriteria = await server('saveVagaCriterios', jobId, criteria);
-        event.currentTarget.closest('dialog').close();
+        form.closest('dialog').close();
+        clearMatchingResults();
         renderMatchingCriteriaSummary();
         notify('Critérios da vaga salvos.');
       } catch (error) { notify(error.message, 'error'); }
@@ -866,22 +972,24 @@
 
     document.getElementById('create-shortlist-form').addEventListener('submit', async event => {
       event.preventDefault();
-      const payload = formToObject(event.currentTarget);
+      const form = event.currentTarget;
+      const payload = formToObject(form);
       const resultIds = String(payload.result_ids || '').split(',').filter(Boolean);
       setBusy(true, 'Criando shortlist e processos…');
       try {
         const created = await server('createShortlistFromResults', payload.vaga_id, resultIds, payload);
-        event.currentTarget.closest('dialog').close();
+        form.closest('dialog').close();
         notify('Shortlist criada com sucesso.');
-        activateRoute('shortlists');
-        await loadShortlists(created.shortlist.shortlist_id);
+        App.currentShortlistId = created.shortlist.shortlist_id;
+        await activateRoute('shortlists');
       } catch (error) { notify(error.message, 'error'); }
       finally { setBusy(false); }
     });
 
     document.getElementById('process-form').addEventListener('submit', async event => {
       event.preventDefault();
-      const payload = formToObject(event.currentTarget);
+      const form = event.currentTarget;
+      const payload = formToObject(form);
       const processId = payload.processo_id;
       const newStatus = payload.status_processo;
       delete payload.processo_id;
@@ -889,7 +997,7 @@
       setBusy(true, 'Atualizando processo…');
       try {
         await server('updateProcessoStatus', processId, newStatus, payload);
-        event.currentTarget.closest('dialog').close();
+        form.closest('dialog').close();
         await Promise.all([openShortlistDetail(App.currentShortlistId, true), loadDashboard()]);
         notify('Etapa do processo atualizada.');
       } catch (error) { notify(error.message, 'error'); }

@@ -2,9 +2,9 @@
 
 Web app interno para a equipe do Serratec operar o pool de talentos, clientes e vagas do Talent Hub. A aplicação roda em Google Apps Script, usa HtmlService no frontend e Google Sheets como banco operacional.
 
-## Estado desta entrega
+## Estado atual
 
-A Fase 1 está implementada na branch `homologacao`:
+O núcleo operacional está implementado na branch `homologacao`:
 
 - criação idempotente das 25 abas gerenciadas;
 - preservação das abas existentes de eventos e status do termo;
@@ -12,11 +12,13 @@ A Fase 1 está implementada na branch `homologacao`:
 - aptidão por `pessoa_id`, termo `ATIVO` e cadastro atualizado na janela configurada;
 - visão consolidada e filtros do banco de talentos;
 - edição da camada profissional do Talent Hub sem alterar a base mestre;
-- CRUD de clientes e vagas;
-- dashboard, histórico de sincronização e audit logs;
-- estrutura física pronta para Matchmaking, Shortlists, Processos e Contratações.
+- clientes, contatos, vagas e critérios configuráveis;
+- matching explicável por regras, sem dependência de API externa;
+- shortlists, processos, bloqueios, liberações, contratações e substituições;
+- dashboard, histórico de sincronização, eventos e audit logs;
+- testes locais das regras e dos fluxos críticos.
 
-Matchmaking e Shortlists estão visíveis na navegação como módulos da Fase 2, sem dependência de APIs externas.
+O próximo portão é a homologação ponta a ponta com dados reais. O recorte do produto, o estado de cada bloco e o backlog próprio estão em [docs/MVP_ROADMAP.md](docs/MVP_ROADMAP.md).
 
 ## Configuração rápida
 
@@ -36,11 +38,11 @@ Os IDs reais não ficam versionados. Use Script Properties ou a tela interna de 
 npm test
 ```
 
-O teste não acessa Google Sheets. Ele valida sintaxe, manifesto, contratos das abas, templates e regras puras de aptidão/status.
+Os testes não acessam Google Sheets. Eles validam sintaxe, manifesto, contratos das abas, templates, regras e fluxos operacionais simulados.
 
 ## Branches
 
 - `homologacao`: desenvolvimento e validação no Apps Script de homologação;
 - `main`: versão estável, promovida por pull request.
 
-Consulte [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md), [docs/DATA_MODEL.md](docs/DATA_MODEL.md) e [docs/OPERATING_RULES_DRAFT.md](docs/OPERATING_RULES_DRAFT.md).
+Consulte [docs/MVP_ROADMAP.md](docs/MVP_ROADMAP.md), [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md), [docs/DATA_MODEL.md](docs/DATA_MODEL.md) e [docs/OPERATING_RULES_DRAFT.md](docs/OPERATING_RULES_DRAFT.md).
