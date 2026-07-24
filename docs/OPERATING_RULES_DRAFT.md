@@ -46,7 +46,7 @@ Processos ativos: `Pré-selecionado`, `Aguardando confirmação`, `Bloqueado`, `
 - linhas sem a chave principal são ignoradas;
 - chaves duplicadas na origem preservam a última ocorrência lida;
 - cada execução gera registro em `TH_SYNC_LOG` e audit log;
-- sincronizar pessoas regenera aptidão e dashboard; sincronizar tudo também atualiza matrículas.
+- sincronizar pessoas regenera aptidão e dashboard; sincronizar matrículas também refaz a visão para refletir imediatamente as formações; sincronizar tudo executa o ciclo completo.
 
 ### Formação Serratec e dados já disponíveis
 

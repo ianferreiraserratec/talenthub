@@ -9,7 +9,10 @@ function syncPessoas() {
 
 function syncMatriculas() {
   return withScriptLock_(function () {
-    return syncSourceToCache_('MATRICULAS');
+    var result = syncSourceToCache_('MATRICULAS');
+    regenerateTalentView_();
+    regenerateDashboard_();
+    return result;
   });
 }
 
