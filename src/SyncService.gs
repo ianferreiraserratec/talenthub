@@ -172,7 +172,7 @@ function regenerateTalentView_() {
     var enrollmentLabels = uniqueDisplayValues_(approvedEnrollments.map(function (enrollment) {
       return [
         enrollment.modalidade,
-        enrollment.ciclo || enrollment.turma,
+        formatEnrollmentCycle_(enrollment.ciclo || enrollment.turma),
         enrollment.parceiro
       ].filter(function (value) { return !valueIsBlank_(value); }).join(' · ');
     }));
@@ -180,7 +180,7 @@ function regenerateTalentView_() {
       return enrollment.modalidade;
     }));
     var enrollmentCycles = uniqueDisplayValues_(approvedEnrollments.map(function (enrollment) {
-      return enrollment.ciclo || enrollment.turma;
+      return formatEnrollmentCycle_(enrollment.ciclo || enrollment.turma);
     }));
     var enrollmentPartners = uniqueDisplayValues_(approvedEnrollments.map(function (enrollment) {
       return enrollment.parceiro;
@@ -281,6 +281,17 @@ function uniqueDisplayValues_(values) {
     seen[normalized] = true;
     return true;
   }).map(function (value) { return String(value).trim(); });
+}
+
+function formatEnrollmentCycle_(value) {
+  if (Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value.getTime())) {
+    return Utilities.formatDate(
+      value,
+      Session.getScriptTimeZone() || 'America/Sao_Paulo',
+      'MM/yyyy'
+    );
+  }
+  return String(value == null ? '' : value).trim();
 }
 
 function calculateAge_(birthDate, referenceDate) {

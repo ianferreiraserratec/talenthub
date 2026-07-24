@@ -263,7 +263,7 @@
       App.currentTalentId = personId;
       const person = detail.pessoa || {};
       document.getElementById('talent-detail-title').textContent = person.nome || 'Talento';
-      const registrations = (detail.matriculas || []).map(item => escapeHtml(`${item.modalidade || 'Formação'} · ${item.ciclo || item.turma || 'sem ciclo'} · ${item.status_aluno || item.status_curso || ''}`)).join('<br>') || 'Nenhuma matrícula sincronizada.';
+      const registrations = (detail.matriculas || []).map(item => escapeHtml(`${item.modalidade || 'Formação'} · ${formatCycle(item.ciclo || item.turma) || 'sem ciclo'} · ${item.status_aluno || item.status_curso || ''}`)).join('<br>') || 'Nenhuma matrícula sincronizada.';
       document.getElementById('talent-detail-content').innerHTML = `
         <div class="detail-grid">
           ${detailItem('Pessoa ID', person.pessoa_id)}
@@ -402,10 +402,11 @@
     const currentModel = modelSelect.value;
     const models = setup.modelos || [];
     const firstActiveModel = models.find(model => isYes(model.ativo));
+    const operationalModel = models.find(model => model.modelo_id === 'MATCH_CDP_2026' && isYes(model.ativo));
     modelSelect.innerHTML = '<option value="">Selecione um modelo</option>' + models.map(model => `<option value="${escapeAttr(model.modelo_id)}">${escapeHtml(model.nome_modelo)} · v${escapeHtml(model.versao || '1.0')}${isYes(model.ativo) ? '' : ' · inativo'}</option>`).join('');
     modelSelect.value = currentModel && models.some(model => model.modelo_id === currentModel)
       ? currentModel
-      : (firstActiveModel || models[0] || {}).modelo_id || '';
+      : (operationalModel || firstActiveModel || models[0] || {}).modelo_id || '';
     App.vacancyCriteria = setup.criterios_vaga || [];
     renderMatchingCriteriaSummary();
     renderMatchingRuns(setup.execucoes || []);
@@ -459,7 +460,10 @@
       renderMatchingRuns(App.matchingSetup.execucoes);
       App.matchingResults = data;
       renderMatchingResults(data);
-      notify('Matchmaking concluído.');
+      const elapsedSeconds = data.performance && data.performance.total_ms
+        ? ` em ${(Number(data.performance.total_ms) / 1000).toFixed(1).replace('.', ',')} s`
+        : '';
+      notify(`Matchmaking concluído${elapsedSeconds}.`);
     } catch (error) { notify(error.message, 'error'); }
     finally { setBusy(false); }
   }
@@ -1284,6 +1288,15 @@
     if (!value) return '—';
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? escapeHtml(String(value)) : date.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+  }
+  function formatCycle(value) {
+    if (!value) return '';
+    const textValue = String(value);
+    if (!/^\d{4}-\d{2}-\d{2}T|GMT[+-]\d{4}/.test(textValue)) return textValue;
+    const date = new Date(value);
+    return Number.isNaN(date.getTime())
+      ? textValue
+      : date.toLocaleDateString('pt-BR', { month: '2-digit', year: 'numeric' });
   }
   function toInputDate(value) {
     const date = new Date(value);

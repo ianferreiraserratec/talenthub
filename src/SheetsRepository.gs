@@ -1,3 +1,5 @@
+var TH_SHEET_HEADER_CACHE_ = {};
+
 function getSheetOrThrow_(sheetName) {
   var sheet = getOperationalSpreadsheet_().getSheetByName(sheetName);
   if (!sheet) {
@@ -7,10 +9,16 @@ function getSheetOrThrow_(sheetName) {
 }
 
 function getHeader_(sheet) {
-  if (sheet.getLastColumn() < 1) return [];
-  return sheet.getRange(1, 1, 1, sheet.getLastColumn()).getDisplayValues()[0].map(function (item) {
+  var lastColumn = sheet.getLastColumn();
+  if (lastColumn < 1) return [];
+  var cacheKey = sheet.getName();
+  var cached = TH_SHEET_HEADER_CACHE_[cacheKey];
+  if (cached && cached.lastColumn === lastColumn) return cached.headers.slice();
+  var headers = sheet.getRange(1, 1, 1, lastColumn).getDisplayValues()[0].map(function (item) {
     return String(item || '').trim();
   });
+  TH_SHEET_HEADER_CACHE_[cacheKey] = { lastColumn: lastColumn, headers: headers.slice() };
+  return headers;
 }
 
 function assertRequiredHeaders_(headers, required, sourceName) {
@@ -47,6 +55,7 @@ function getSheetObjects_(sheetName, options) {
   if (lastRow <= 1 || lastColumn < 1) return [];
   var values = sheet.getRange(1, 1, lastRow, lastColumn).getValues();
   var headers = values.shift().map(function (item) { return String(item || '').trim(); });
+  TH_SHEET_HEADER_CACHE_[sheetName] = { lastColumn: lastColumn, headers: headers.slice() };
   if (!headers.some(function (header) { return header !== ''; })) return [];
   var rows = values;
   var objects = rowsToObjects_(headers, rows).filter(function (row) {
@@ -69,7 +78,9 @@ function getObjectById_(sheetName, idField, idValue, options) {
 function appendObject_(sheetName, object) {
   var sheet = getSheetOrThrow_(sheetName);
   var headers = getHeader_(sheet);
-  sheet.appendRow(objectToRow_(headers, object));
+  sheet.getRange(sheet.getLastRow() + 1, 1, 1, headers.length).setValues([
+    objectToRow_(headers, object)
+  ]);
   return serializeForClient_(object);
 }
 

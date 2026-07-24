@@ -54,7 +54,7 @@ A visão consolidada prioriza evidências já existentes no CDP antes de depende
 
 - uma matrícula é tratada como aprovada quando `status_aluno` indica aprovação, conclusão ou certificação — incluindo o valor real `Aprovação` usado atualmente na base;
 - `status_curso` só é usado como alternativa quando `status_aluno` está vazio;
-- formação, modalidade, ciclo/turma e parceiro são consolidados sem duplicidade por `pessoa_id`;
+- formação, modalidade, ciclo/turma e parceiro são consolidados sem duplicidade por `pessoa_id`; ciclos armazenados como data são apresentados em `MM/AAAA`;
 - idade e faixa etária são calculadas a partir de `data_nascimento`;
 - escolaridade combina os campos já existentes de ensino médio, curso e faculdade;
 - o currículo usado pelo app prioriza o arquivo alternativo informado no Talent Hub e, na ausência dele, usa o currículo do CDP.
@@ -88,6 +88,13 @@ O dicionário de matching aceita apenas campos mapeados dos talentos e das vagas
 Campos demográficos e demais dados sensíveis nunca entram no modelo padrão. Eles só participam quando a equipe os declara explicitamente como critério daquela vaga, permitindo prioridade ou exclusividade auditável. Requisitos técnicos em texto livre devem ser registrados como valores separados por vírgula ou quebra de linha e comparados apenas com competências mapeadas.
 
 Critérios do modelo cujo campo correspondente da vaga esteja vazio são ignorados no denominador do score. Assim, a ausência de uma informação no briefing não reduz artificialmente a nota de todos os talentos. Alterar vaga, critérios ou modelo invalida execuções concluídas que ficaram obsoletas.
+
+Dois modelos ficam disponíveis:
+
+- `MATCH_CDP_2026`, padrão operacional atual: usa a localidade já existente no CDP, quando a vaga não é remota, e combina esse sinal com os critérios explícitos configurados na vaga;
+- `MATCH_PADRAO_2026`, modelo profissional completo: permanece disponível para quando área, senioridade, competências, modalidade, contratação e pretensão estiverem preenchidas na camada Talent Hub.
+
+O modelo operacional não transforma formação, escolaridade, currículo ou demografia em regras universais. A equipe escolhe esses critérios por vaga, usando os atalhos no-code, porque o peso e o caráter prioritário/exclusivo dependem da demanda concreta.
 
 ## Shortlist, processo e contratação
 

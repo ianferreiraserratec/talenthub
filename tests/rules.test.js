@@ -14,7 +14,11 @@ const context = {
   String,
   Number,
   Math,
-  Utilities: { formatDate: date => date.toISOString() },
+  Utilities: {
+    formatDate: (date, timezone, pattern) => pattern === 'MM/yyyy'
+      ? `${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`
+      : date.toISOString()
+  },
   Session: { getScriptTimeZone: () => 'America/Sao_Paulo' }
 };
 vm.createContext(context);
@@ -31,6 +35,8 @@ assert.strictEqual(context.isDateWithinDays_('01/01/2026', 90, new Date(2026, 6,
 assert.strictEqual(context.calculateAge_('23/07/2000', new Date(2026, 6, 23)), 26);
 assert.strictEqual(context.calculateAge_('24/07/2000', new Date(2026, 6, 23)), 25);
 assert.strictEqual(context.ageRangeLabel_(26), '25 a 29');
+assert.strictEqual(context.formatEnrollmentCycle_(new Date(2025, 1, 1)), '02/2025');
+assert.strictEqual(context.formatEnrollmentCycle_('2025.2'), '2025.2');
 assert.strictEqual(context.isApprovedEnrollment_({ status_aluno: 'APROVADO' }), true);
 assert.strictEqual(context.isApprovedEnrollment_({ status_aluno: 'Aprovação' }), true);
 assert.strictEqual(context.isApprovedEnrollment_({ status_aluno: 'REPROVADO', status_curso: 'CONCLUÍDO' }), false);
@@ -127,6 +133,43 @@ assert.strictEqual(
   100,
   'Campo da vaga não preenchido deve ser ignorado, não reduzir artificialmente o score.'
 );
+
+const remoteLocationComparison = context.compareModelCriterion_(
+  { cidade: 'PetrÃ³polis', uf: 'RJ' },
+  { cidade: 'PetrÃ³polis', uf: 'RJ', modalidade: 'Remoto' },
+  {
+    campo_talento: 'cidade/uf',
+    campo_vaga: 'cidade/uf',
+    tipo_comparacao: 'intersecao_lista'
+  }
+);
+assert.strictEqual(remoteLocationComparison.applicable, false);
+
+const cdpOperationalEvaluation = context.evaluateTalentForJob_(
+  Object.assign({}, talent, {
+    cidade: 'PetrÃ³polis',
+    uf: 'RJ',
+    formacoes_serratec: 'Software Â· 02/2023 Â· SENAI'
+  }),
+  { cidade: 'PetrÃ³polis', uf: 'RJ', modalidade: 'HÃ­brido' },
+  [{
+    criterio_nome: 'Localidade atual',
+    campo_talento: 'cidade/uf',
+    campo_vaga: 'cidade/uf',
+    tipo_comparacao: 'intersecao_lista',
+    peso: 20
+  }],
+  [{
+    criterio_nome: 'FormaÃ§Ã£o Software',
+    campo_talento: 'formacoes_serratec',
+    tipo_regra: 'PrioritÃ¡rio',
+    operador: 'contem',
+    valor_esperado: 'Software',
+    peso_override: 15
+  }],
+  { normalizar_para_100: 'SIM' }
+);
+assert.strictEqual(cdpOperationalEvaluation.score_total, 100);
 
 const formationEvaluation = context.evaluateTalentForJob_(
   Object.assign({}, talent, {

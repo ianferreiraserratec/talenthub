@@ -12,6 +12,7 @@ function onOpen() {
 function setupTalentHubDatabase() {
   return withScriptLock_(function () {
     var spreadsheet = getOperationalSpreadsheet_();
+    TH_SHEET_HEADER_CACHE_ = {};
     var schema = getDatabaseSchema_();
     var created = [];
     var updated = [];
@@ -89,9 +90,18 @@ function seedConfig_(spreadsheet) {
     { chave: 'DIAS_CADASTRO_VALIDO', valor: '90', descricao: 'Janela de validade do cadastro', atualizado_em: now, atualizado_por: user },
     { chave: 'TERMO_STATUS_VALIDO', valor: 'ATIVO', descricao: 'Status que representa termo válido', atualizado_em: now, atualizado_por: user },
     { chave: 'TERMO_STATUS_INVALIDO', valor: 'CANCELADO', descricao: 'Status que representa termo inválido', atualizado_em: now, atualizado_por: user },
-    { chave: 'MATCHING_MODELO_PADRAO', valor: 'MATCH_PADRAO_2026', descricao: 'Modelo padrão de matchmaking', atualizado_em: now, atualizado_por: user }
+    { chave: 'MATCHING_MODELO_PADRAO', valor: 'MATCH_CDP_2026', descricao: 'Modelo padrão de matchmaking', atualizado_em: now, atualizado_por: user }
   ];
   upsertRowsByCompositeKey_('TH_CONFIG', rows, ['chave']);
+  var currentMatchingConfig = getObjectById_('TH_CONFIG', 'chave', 'MATCHING_MODELO_PADRAO', { raw: true });
+  if (currentMatchingConfig && String(currentMatchingConfig.valor || '') === 'MATCH_PADRAO_2026') {
+    updateObjectById_('TH_CONFIG', 'chave', 'MATCHING_MODELO_PADRAO', {
+      valor: 'MATCH_CDP_2026',
+      descricao: 'Modelo padrão de matchmaking',
+      atualizado_em: now,
+      atualizado_por: user
+    });
+  }
 }
 
 function seedParameters_() {
@@ -125,19 +135,34 @@ function seedParameters_() {
 function seedMatchingModel_() {
   var now = nowIso_();
   var user = currentUser_();
-  upsertRowsByCompositeKey_('TH_MATCHING_MODELOS', [{
-    modelo_id: 'MATCH_PADRAO_2026',
-    nome_modelo: 'Modelo padrão Talent Hub',
-    descricao: 'Modelo inicial de pontuação por aderência entre vaga e talento',
-    ativo: 'SIM',
-    versao: '1.0',
-    score_minimo_recomendado: 60,
-    normalizar_para_100: 'SIM',
-    criado_em: now,
-    criado_por: user,
-    atualizado_em: now,
-    atualizado_por: user
-  }], ['modelo_id']);
+  upsertRowsByCompositeKey_('TH_MATCHING_MODELOS', [
+    {
+      modelo_id: 'MATCH_PADRAO_2026',
+      nome_modelo: 'Modelo profissional completo',
+      descricao: 'Modelo para quando a camada profissional do Talent Hub estiver preenchida',
+      ativo: 'SIM',
+      versao: '1.0',
+      score_minimo_recomendado: 60,
+      normalizar_para_100: 'SIM',
+      criado_em: now,
+      criado_por: user,
+      atualizado_em: now,
+      atualizado_por: user
+    },
+    {
+      modelo_id: 'MATCH_CDP_2026',
+      nome_modelo: 'Modelo operacional · dados atuais',
+      descricao: 'Usa a localidade já disponível no CDP e os critérios configurados na vaga',
+      ativo: 'SIM',
+      versao: '1.0',
+      score_minimo_recomendado: 60,
+      normalizar_para_100: 'SIM',
+      criado_em: now,
+      criado_por: user,
+      atualizado_em: now,
+      atualizado_por: user
+    }
+  ], ['modelo_id']);
 
   var criteria = [
     ['CRT_AREA', 'Área principal', 'area_interesse_principal', 'area_vaga', 'igual', 20],
@@ -153,6 +178,18 @@ function seedMatchingModel_() {
       campo_talento: item[2], campo_vaga: item[3], tipo_comparacao: item[4],
       modo: 'pontuacao', peso: item[5], ativo: 'SIM', observacao: ''
     };
+  });
+  criteria.push({
+    modelo_criterio_id: 'CRT_CDP_LOCALIDADE',
+    modelo_id: 'MATCH_CDP_2026',
+    criterio_nome: 'Localidade atual',
+    campo_talento: 'cidade/uf',
+    campo_vaga: 'cidade/uf',
+    tipo_comparacao: 'intersecao_lista',
+    modo: 'pontuacao',
+    peso: 20,
+    ativo: 'SIM',
+    observacao: 'Ignorado automaticamente em vagas remotas.'
   });
   upsertRowsByCompositeKey_('TH_MATCHING_MODELO_CRITERIOS', criteria, ['modelo_criterio_id']);
 }

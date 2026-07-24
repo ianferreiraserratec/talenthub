@@ -259,6 +259,7 @@ function isMappedMatchingExpression_(expression, allowedFields) {
 }
 
 function runMatching(vagaId, qtdPerfis, modeloId) {
+  var operationStartedAt = Date.now();
   var requestedNumber = Number(qtdPerfis || 5);
   if (!Number.isFinite(requestedNumber)) throw new Error('Quantidade de perfis inválida.');
   var requested = Math.min(Math.max(Math.floor(requestedNumber), 1), 100);
@@ -297,6 +298,7 @@ function runMatching(vagaId, qtdPerfis, modeloId) {
     eligibleTalents = aptTalents.filter(function (talent) {
       return String(talent.status_pool || '') === 'Disponível';
     });
+    var preparationFinishedAt = Date.now();
 
     var runId = generateId_('RUN_');
     var now = nowIso_();
@@ -315,7 +317,7 @@ function runMatching(vagaId, qtdPerfis, modeloId) {
       total_recomendados: 0,
       observacoes: aptTalents.length - eligibleTalents.length + ' talentos aptos indisponíveis não avaliados.'
     };
-    appendObject_('TH_MATCHING_RUNS', run);
+    var runPersisted = false;
 
     try {
       var evaluated = eligibleTalents.map(function (talent) {
@@ -357,35 +359,60 @@ function runMatching(vagaId, qtdPerfis, modeloId) {
           criado_em: now
         };
       });
-      if (resultRows.length) {
-        var resultSheet = getSheetOrThrow_('TH_MATCHING_RESULTADOS');
-        var resultHeaders = getHeader_(resultSheet);
-        var resultMatrix = resultRows.map(function (row) { return objectToRow_(resultHeaders, row); });
-        resultSheet.getRange(resultSheet.getLastRow() + 1, 1, resultMatrix.length, resultHeaders.length).setValues(resultMatrix);
-      }
+      var evaluationFinishedAt = Date.now();
 
       var eliminatedCount = evaluated.filter(function (item) { return item.eliminado; }).length;
       var runUpdate = {
         status_run: 'Concluído',
         total_talentos_eliminados: eliminatedCount,
-        total_recomendados: recommendedCount
+        total_recomendados: recommendedCount,
+        observacoes: run.observacoes +
+          ' Preparação: ' + (preparationFinishedAt - operationStartedAt) + ' ms.' +
+          ' Avaliação: ' + (evaluationFinishedAt - preparationFinishedAt) + ' ms.'
       };
-      updateObjectById_('TH_MATCHING_RUNS', 'run_id', runId, runUpdate);
-      writeAuditLog_('MATCH', 'VAGA', vagaId, '', '', 'WEB_APP', eligibleTalents.length + ' talentos avaliados; ' + recommendedCount + ' recomendados');
+      var completedRun = Object.assign({}, run, runUpdate);
+      appendObject_('TH_MATCHING_RUNS', completedRun);
+      runPersisted = true;
+      appendObjects_('TH_MATCHING_RESULTADOS', resultRows);
+      var persistenceFinishedAt = Date.now();
+      var performance = {
+        preparation_ms: preparationFinishedAt - operationStartedAt,
+        evaluation_ms: evaluationFinishedAt - preparationFinishedAt,
+        persistence_ms: persistenceFinishedAt - evaluationFinishedAt,
+        total_ms: persistenceFinishedAt - operationStartedAt
+      };
+      writeAuditLog_(
+        'MATCH',
+        'VAGA',
+        vagaId,
+        '',
+        '',
+        'WEB_APP',
+        eligibleTalents.length + ' talentos avaliados; ' + recommendedCount +
+          ' recomendados; ' + performance.total_ms + ' ms'
+      );
       writeEvent_('Matchmaking executado', 'VAGA', vagaId, { vaga_id: vagaId, cliente_id: job.cliente_id }, recommendedCount + ' talentos recomendados');
       var eligibleById = {};
       eligibleTalents.forEach(function (talent) {
         eligibleById[String(talent.pessoa_id || '')] = talent;
       });
       return serializeForClient_({
-        run: Object.assign({}, run, runUpdate),
+        run: completedRun,
         vaga: job,
+        performance: performance,
         resultados: resultRows.map(function (result) {
           return decorateMatchingResult_(result, eligibleById[String(result.pessoa_id || '')] || {});
         })
       });
     } catch (error) {
-      updateObjectById_('TH_MATCHING_RUNS', 'run_id', runId, { status_run: 'Erro', observacoes: error.message });
+      if (runPersisted) {
+        updateObjectById_('TH_MATCHING_RUNS', 'run_id', runId, { status_run: 'Erro', observacoes: error.message });
+      } else {
+        appendObject_('TH_MATCHING_RUNS', Object.assign({}, run, {
+          status_run: 'Erro',
+          observacoes: error.message
+        }));
+      }
       throw error;
     }
   });
@@ -521,6 +548,12 @@ function evaluateTalentForJob_(talent, job, modelCriteria, vacancyCriteria, mode
 
 function compareModelCriterion_(talent, job, criterion) {
   var type = String(criterion.tipo_comparacao || 'igual');
+  if (
+    String(criterion.campo_vaga || '') === 'cidade/uf' &&
+    normalizeText_(job.modalidade) === 'remoto'
+  ) {
+    return { applicable: false, matched: false, ratio: 0 };
+  }
   if (type === 'salario_compativel') return compareSalaryRanges_(talent, job);
   var talentValue = resolveMatchingField_(talent, criterion.campo_talento);
   var jobValue = resolveMatchingField_(job, criterion.campo_vaga);
