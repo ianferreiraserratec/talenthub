@@ -63,6 +63,8 @@
 
   .button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 9px 15px; border: 1px solid transparent; border-radius: 10px; font-weight: 760; transition: .18s ease; }
   .button:hover { transform: translateY(-1px); }
+  .button.is-loading { pointer-events: none; opacity: .78; }
+  .button.is-loading::before { content: ""; width: 14px; height: 14px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .65s linear infinite; }
   .button-primary { color: #fff; background: var(--blue-600); box-shadow: 0 8px 18px rgba(23,105,170,.2); }
   .button-primary:hover { background: #105b96; }
   .button-secondary { color: var(--blue-600); border-color: #b9d5e8; background: #f4fafd; }
@@ -120,9 +122,13 @@
   td { padding: 15px 16px; border-top: 1px solid var(--line); vertical-align: middle; }
   tbody tr:hover { background: #fbfdfe; }
   .align-right { text-align: right; }
-  .primary-cell { display: grid; gap: 3px; min-width: 190px; }
-  .primary-cell strong { font-size: 13px; }
+  .primary-cell { display: grid; gap: 5px; min-width: 190px; line-height: 1.35; }
+  .primary-cell strong { display: block; font-size: 13px; }
+  .primary-cell small { display: block; }
   .primary-cell small, .secondary-text { color: var(--ink-500); }
+  .table-loading { padding: 34px 20px; color: var(--ink-500); text-align: center; }
+  .table-loading span { display: inline-flex; align-items: center; gap: 9px; }
+  .table-loading span::before { content: ""; width: 16px; height: 16px; border: 2px solid #b9d5e8; border-top-color: var(--blue-600); border-radius: 50%; animation: spin .65s linear infinite; }
   .status-badge { display: inline-flex; align-items: center; gap: 6px; width: fit-content; padding: 5px 9px; border-radius: 999px; font-size: 11px; font-weight: 780; white-space: nowrap; }
   .status-badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
   .status-positive { color: #187455; background: #e7f7f1; }

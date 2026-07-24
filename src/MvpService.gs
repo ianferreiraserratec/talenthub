@@ -53,7 +53,7 @@ function mvpSaveTalent(payload) {
     var before = getObjectById_('TH_TALENTOS', 'pessoa_id', id, { raw: true });
     if (before) { var result = updateObjectById_('TH_TALENTOS', 'pessoa_id', id, clean); writeEntityAudit_('UPDATE', 'TALENTO', id, result.before, result.after, 'WEB_APP'); }
     else { appendObject_('TH_TALENTOS', clean); writeEntityAudit_('CREATE', 'TALENTO', id, {}, clean, 'WEB_APP'); }
-    regenerateTalentView_(); regenerateDashboard_();
+    regenerateTalentView_();
     return { ok: true };
   });
 }
@@ -86,8 +86,32 @@ function mvpSaveClient(payload) {
     } else {
       clean.cliente_id = generateId_('CLI_'); clean.criado_em = clean.atualizado_em; clean.criado_por = clean.atualizado_por; appendObject_('TH_CLIENTES', clean); writeEntityAudit_('CREATE', 'CLIENTE', clean.cliente_id, {}, clean, 'WEB_APP');
     }
-    regenerateDashboard_(); return serializeForClient_(clean);
+    return serializeForClient_(clean);
   });
+}
+
+function mvpSaveClientWithContact(payload) {
+  payload = payload || {};
+  var saved = mvpSaveClient(payload);
+  if (String(payload.contato_nome || '').trim()) {
+    saved.contato_principal = mvpSaveContact(saved.cliente_id, {
+      contato_id: payload.contato_id,
+      nome: payload.contato_nome,
+      cargo: payload.contato_cargo,
+      email: payload.contato_email,
+      telefone: payload.contato_telefone,
+      contato_principal: 'SIM',
+      ativo: 'SIM'
+    });
+  } else {
+    saved.contato_principal = payload.contato_id ?
+      getObjectById_('TH_CLIENTE_CONTATOS', 'contato_id', payload.contato_id, { raw: true }) : null;
+  }
+  saved.vagas_abertas = getSheetObjects_('TH_VAGAS', { raw: true }).filter(function (job) {
+    return String(job.cliente_id || '') === String(saved.cliente_id || '') &&
+      ['Aberta', 'Em processo'].indexOf(String(job.status_vaga || '')) !== -1;
+  }).length;
+  return serializeForClient_(saved);
 }
 
 function mvpSaveContact(clienteId, payload) {
@@ -144,10 +168,17 @@ function mvpSaveJob(payload) {
       if (clean.status_vaga === 'Preenchida' && hired < clean.qtd_posicoes) throw new Error('A vaga só pode ser preenchida por uma contratação registrada na indicação.');
       if (['Preenchida', 'Encerrada', 'Cancelada'].indexOf(String(before.status_vaga || '')) !== -1 && ['Preenchida', 'Encerrada', 'Cancelada'].indexOf(clean.status_vaga) === -1) throw new Error('Uma vaga encerrada não pode ser reaberta manualmente.');
       var result = updateObjectById_('TH_VAGAS', 'vaga_id', clean.vaga_id, clean); writeEntityAudit_('UPDATE', 'VAGA', clean.vaga_id, result.before, result.after, 'WEB_APP');
-      if (['Encerrada', 'Cancelada'].indexOf(clean.status_vaga) !== -1) mvpReleaseActiveIndications_(clean.vaga_id, clean.atualizado_em, 'Vaga ' + clean.status_vaga.toLowerCase() + '.');
+      if (['Encerrada', 'Cancelada'].indexOf(clean.status_vaga) !== -1) {
+        var allIndications = getSheetObjects_('TH_INDICACOES', { raw: true });
+        var refreshedPeople = {};
+        mvpReleaseActiveIndications_(clean.vaga_id, clean.atualizado_em, 'Vaga ' + clean.status_vaga.toLowerCase() + '.', allIndications).forEach(function (item) {
+          var personId = String(item.pessoa_id || '');
+          if (personId && !refreshedPeople[personId]) { refreshedPeople[personId] = true; mvpRefreshTalentStatus_(personId, allIndications); }
+        });
+      }
     }
     else { clean.vaga_id = generateId_('VAG_'); clean.criado_em = clean.atualizado_em; clean.criado_por = clean.atualizado_por; appendObject_('TH_VAGAS', clean); writeEntityAudit_('CREATE', 'VAGA', clean.vaga_id, {}, clean, 'WEB_APP'); }
-    regenerateTalentView_(); regenerateDashboard_(); return serializeForClient_(clean);
+    return serializeForClient_(clean);
   });
 }
 
@@ -166,25 +197,40 @@ function mvpCreateIndication(payload) {
     if (!job || !talent) throw new Error('Vaga ou talento não encontrado.');
     if (['Aberta', 'Em processo'].indexOf(String(job.status_vaga || '')) === -1) throw new Error('A vaga precisa estar aberta para receber indicação.');
     if (String(talent.apto_talent_hub || '') !== 'SIM' || String(talent.status_pool || '') !== 'Disponível') throw new Error('Somente talentos aptos e disponíveis podem ser indicados.');
-    var duplicate = getSheetObjects_('TH_INDICACOES', { raw: true }).some(function (item) { return String(item.vaga_id || '') === String(job.vaga_id) && String(item.pessoa_id || '') === String(talent.pessoa_id) && ['Em análise', 'Enviado', 'Entrevista'].indexOf(String(item.status_indicacao || '')) !== -1; });
+    var indications = getSheetObjects_('TH_INDICACOES', { raw: true });
+    var duplicate = indications.some(function (item) { return String(item.vaga_id || '') === String(job.vaga_id) && String(item.pessoa_id || '') === String(talent.pessoa_id) && ['Em análise', 'Enviado', 'Entrevista'].indexOf(String(item.status_indicacao || '')) !== -1; });
     if (duplicate) throw new Error('Já existe uma indicação ativa desse talento para esta vaga.');
-    var now = nowIso_(); var row = { indicacao_id: generateId_('IND_'), vaga_id: job.vaga_id, cliente_id: job.cliente_id, pessoa_id: talent.pessoa_id, status_indicacao: 'Em análise', observacoes: payload.observacoes || '', criado_em: now, criado_por: currentUser_(), atualizado_em: now, atualizado_por: currentUser_() };
+    var now = nowIso_(); var user = currentUser_(); var row = { indicacao_id: generateId_('IND_'), vaga_id: job.vaga_id, cliente_id: job.cliente_id, pessoa_id: talent.pessoa_id, status_indicacao: 'Em análise', observacoes: payload.observacoes || '', criado_em: now, criado_por: user, atualizado_em: now, atualizado_por: user };
     appendObject_('TH_INDICACOES', row);
-    var jobUpdate = updateObjectById_('TH_VAGAS', 'vaga_id', job.vaga_id, { status_vaga: 'Em processo', atualizado_em: now, atualizado_por: currentUser_() });
-    writeEntityAudit_('UPDATE', 'VAGA', job.vaga_id, jobUpdate.before, jobUpdate.after, 'SISTEMA');
-    writeEntityAudit_('CREATE', 'INDICACAO', row.indicacao_id, {}, row, 'WEB_APP'); regenerateTalentView_(); regenerateDashboard_(); return serializeForClient_(row);
+    if (String(job.status_vaga || '') !== 'Em processo') {
+      var jobUpdate = updateObjectById_('TH_VAGAS', 'vaga_id', job.vaga_id, { status_vaga: 'Em processo', atualizado_em: now, atualizado_por: user });
+      writeEntityAudit_('UPDATE', 'VAGA', job.vaga_id, jobUpdate.before, jobUpdate.after, 'SISTEMA');
+    }
+    writeEntityAudit_('CREATE', 'INDICACAO', row.indicacao_id, {}, row, 'WEB_APP');
+    indications.push(row); mvpRefreshTalentStatus_(row.pessoa_id, indications);
+    row.nome_talento = talent.nome || '';
+    row.titulo_vaga = job.titulo_vaga || '';
+    return serializeForClient_(row);
   });
 }
 
 function mvpUpdateIndication(indicacaoId, newStatus, observacoes) {
   return withScriptLock_(function () {
-    var row = getObjectById_('TH_INDICACOES', 'indicacao_id', indicacaoId, { raw: true }); if (!row) throw new Error('Indicação não encontrada.');
+    var indications = getSheetObjects_('TH_INDICACOES', { raw: true });
+    var row = indications.filter(function (item) { return String(item.indicacao_id || '') === String(indicacaoId || ''); })[0]; if (!row) throw new Error('Indicação não encontrada.');
     if (getAllowedIndicationTransitions_(row.status_indicacao).indexOf(newStatus) === -1) throw new Error('Transição de status não permitida.');
     var now = nowIso_(); var patch = { status_indicacao: newStatus, observacoes: observacoes == null ? row.observacoes : observacoes, atualizado_em: now, atualizado_por: currentUser_() };
     if (newStatus === 'Enviado') patch.enviado_em = now; if (newStatus === 'Entrevista') patch.entrevista_em = now; if (['Contratado', 'Liberado'].indexOf(newStatus) !== -1) patch.resultado_em = now;
     var result = updateObjectById_('TH_INDICACOES', 'indicacao_id', indicacaoId, patch); writeEntityAudit_('UPDATE', 'INDICACAO', indicacaoId, result.before, result.after, 'WEB_APP');
-    mvpRefreshJobStatus_(row.vaga_id, now);
-    regenerateTalentView_(); regenerateDashboard_(); return serializeForClient_(result.after);
+    indications = indications.map(function (item) { return String(item.indicacao_id || '') === String(indicacaoId || '') ? result.after : item; });
+    var state = mvpRefreshJobStatus_(row.vaga_id, now, indications);
+    var affected = (['Contratado', 'Liberado'].indexOf(newStatus) !== -1 ? [result.after] : []).concat(state.released || []);
+    var seen = {};
+    affected.forEach(function (item) {
+      var personId = String(item.pessoa_id || '');
+      if (personId && !seen[personId]) { seen[personId] = true; mvpRefreshTalentStatus_(personId, indications); }
+    });
+    return serializeForClient_({ indication: result.after, related: state.released || [], job: state.job });
   });
 }
 
@@ -199,11 +245,12 @@ function getAllowedIndicationTransitions_(status) {
   return (transitions[String(status || '')] || []).slice();
 }
 
-function mvpRefreshJobStatus_(vagaId, now) {
+function mvpRefreshJobStatus_(vagaId, now, indications) {
   var job = getObjectById_('TH_VAGAS', 'vaga_id', vagaId, { raw: true }); if (!job) return;
-  var indications = getSheetObjects_('TH_INDICACOES', { raw: true }).filter(function (item) { return String(item.vaga_id || '') === String(vagaId); });
-  var hired = indications.filter(function (item) { return String(item.status_indicacao || '') === 'Contratado'; }).length;
-  var active = indications.filter(function (item) { return ['Em análise', 'Enviado', 'Entrevista'].indexOf(String(item.status_indicacao || '')) !== -1; }).length;
+  indications = indications || getSheetObjects_('TH_INDICACOES', { raw: true });
+  var vacancyIndications = indications.filter(function (item) { return String(item.vaga_id || '') === String(vagaId); });
+  var hired = vacancyIndications.filter(function (item) { return String(item.status_indicacao || '') === 'Contratado'; }).length;
+  var active = vacancyIndications.filter(function (item) { return ['Em análise', 'Enviado', 'Entrevista'].indexOf(String(item.status_indicacao || '')) !== -1; }).length;
   if (hired < Number(job.qtd_posicoes || 1)) {
     if (['Preenchida', 'Encerrada', 'Cancelada'].indexOf(String(job.status_vaga || '')) === -1) {
       var desiredStatus = active ? 'Em processo' :
@@ -211,15 +258,17 @@ function mvpRefreshJobStatus_(vagaId, now) {
       if (desiredStatus !== String(job.status_vaga || '')) {
         var activeUpdate = updateObjectById_('TH_VAGAS', 'vaga_id', vagaId, { status_vaga: desiredStatus, atualizado_em: now, atualizado_por: currentUser_() });
         writeEntityAudit_('UPDATE', 'VAGA', vagaId, activeUpdate.before, activeUpdate.after, 'SISTEMA');
+        job = activeUpdate.after;
       }
     }
-    return;
+    return { job: job, released: [] };
   }
   if (String(job.status_vaga || '') !== 'Preenchida') {
     var filledUpdate = updateObjectById_('TH_VAGAS', 'vaga_id', vagaId, { status_vaga: 'Preenchida', data_encerramento: now, atualizado_em: now, atualizado_por: currentUser_() });
     writeEntityAudit_('UPDATE', 'VAGA', vagaId, filledUpdate.before, filledUpdate.after, 'SISTEMA');
+    job = filledUpdate.after;
   }
-  mvpReleaseActiveIndications_(vagaId, now, 'Liberado automaticamente: vaga preenchida.');
+  return { job: job, released: mvpReleaseActiveIndications_(vagaId, now, 'Liberado automaticamente: vaga preenchida.', indications) };
 }
 
 function mvpReconcileVacancyStates_() {
@@ -230,8 +279,10 @@ function mvpReconcileVacancyStates_() {
   return { ok: true };
 }
 
-function mvpReleaseActiveIndications_(vagaId, now, reason) {
-  getSheetObjects_('TH_INDICACOES', { raw: true }).filter(function (item) {
+function mvpReleaseActiveIndications_(vagaId, now, reason, indications) {
+  indications = indications || getSheetObjects_('TH_INDICACOES', { raw: true });
+  var released = [];
+  indications.filter(function (item) {
     return String(item.vaga_id || '') === String(vagaId) && ['Em análise', 'Enviado', 'Entrevista'].indexOf(String(item.status_indicacao || '')) !== -1;
   }).forEach(function (item) {
     var result = updateObjectById_('TH_INDICACOES', 'indicacao_id', item.indicacao_id, {
@@ -239,5 +290,27 @@ function mvpReleaseActiveIndications_(vagaId, now, reason) {
       observacoes: [item.observacoes, reason].filter(Boolean).join('\n')
     });
     writeEntityAudit_('UPDATE', 'INDICACAO', item.indicacao_id, result.before, result.after, 'SISTEMA');
+    Object.keys(result.after).forEach(function (key) { item[key] = result.after[key]; });
+    released.push(result.after);
   });
+  return released;
+}
+
+function mvpRefreshTalentStatus_(pessoaId, indications) {
+  var talent = getObjectById_('VW_TALENTOS_APTOS', 'pessoa_id', pessoaId, { raw: true });
+  if (!talent) return null;
+  indications = indications || getSheetObjects_('TH_INDICACOES', { raw: true });
+  var related = indications.filter(function (item) { return String(item.pessoa_id || '') === String(pessoaId || ''); });
+  var active = related.filter(function (item) { return ['Em análise', 'Enviado', 'Entrevista'].indexOf(String(item.status_indicacao || '')) !== -1; }).length;
+  var hired = related.some(function (item) { return String(item.status_indicacao || '') === 'Contratado'; });
+  var status = String(talent.apto_talent_hub || '') !== 'SIM' ?
+    (String(talent.cadastro_atualizado_90d || '') === 'SIM' ? 'Inelegível' : 'Inativo') :
+    hired ? 'Contratado' :
+      active ? 'Em processo' :
+        normalizeBoolean_(talent.disponivel_para_oportunidades) === false ? 'Inativo' : 'Disponível';
+  if (String(talent.status_pool || '') === status && Number(talent.processos_ativos || 0) === active) return talent;
+  return updateObjectById_('VW_TALENTOS_APTOS', 'pessoa_id', pessoaId, {
+    status_pool: status,
+    processos_ativos: active
+  }).after;
 }

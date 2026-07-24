@@ -1,6 +1,12 @@
 function regenerateDashboard() { return withScriptLock_(regenerateDashboard_); }
 
 function regenerateDashboard_() {
+  var values = buildDashboardRows_();
+  replaceSheetRows_('VW_DASHBOARD', values);
+  return { ok: true };
+}
+
+function buildDashboardRows_() {
   var talents = getSheetObjects_('VW_TALENTOS_APTOS', { raw: true });
   var clients = getSheetObjects_('TH_CLIENTES', { raw: true });
   var jobs = getSheetObjects_('TH_VAGAS', { raw: true });
@@ -15,13 +21,11 @@ function regenerateDashboard_() {
     ['indicacoes_ativas', indications.filter(function (item) { return ['Em análise', 'Enviado', 'Entrevista'].indexOf(String(item.status_indicacao || '')) !== -1; }).length, 'Indicações', 'Indicações em andamento'],
     ['contratacoes', countBy_(indications, 'status_indicacao', 'Contratado'), 'Indicações', 'Contratações registradas']
   ];
-  replaceSheetRows_('VW_DASHBOARD', values.map(function (item) { return { indicador: item[0], valor: item[1], grupo: item[2], descricao: item[3], atualizado_em: now }; }));
-  return { ok: true };
+  return values.map(function (item) { return { indicador: item[0], valor: item[1], grupo: item[2], descricao: item[3], atualizado_em: now }; });
 }
 
 function getDashboard() {
-  var rows = getSheetObjects_('VW_DASHBOARD', { raw: true });
-  if (!rows.length) { regenerateDashboard_(); rows = getSheetObjects_('VW_DASHBOARD', { raw: true }); }
+  var rows = buildDashboardRows_();
   var metrics = {};
   rows.forEach(function (row) { metrics[row.indicador] = row.valor; });
   return serializeForClient_({ metrics: metrics, items: rows, atualizado_em: rows.length ? rows[0].atualizado_em : '' });

@@ -32,6 +32,7 @@ function mockRuntime() {
       ];
       const indications = [];
       const audit = [{ data_evento:new Date().toISOString(), usuario:'equipe@serratec.org', acao:'SYNC', entidade:'TH_CACHE_PESSOAS', observacao:'3 linhas sincronizadas' }];
+      const mockDelay = 350;
 
       const dashboard = () => ({ metrics:{
         talentos_aptos:talents.filter(item => item.apto_talent_hub === 'SIM').length,
@@ -71,6 +72,21 @@ function mockRuntime() {
           client.contato_principal = Object.assign({contato_id:payload.contato_id || 'CTO_' + clienteId}, payload);
           return client.contato_principal;
         },
+        mvpSaveClientWithContact: payload => {
+          let row = clients.find(item => item.cliente_id === payload.cliente_id);
+          if (row) Object.assign(row, payload);
+          else { row = Object.assign({cliente_id:'CLI_' + (clients.length + 1), vagas_abertas:0}, payload); clients.push(row); }
+          if (payload.contato_nome) row.contato_principal = {
+            contato_id:payload.contato_id || 'CTO_' + row.cliente_id,
+            nome:payload.contato_nome,
+            cargo:payload.contato_cargo,
+            email:payload.contato_email,
+            telefone:payload.contato_telefone,
+            contato_principal:'SIM',
+            ativo:'SIM'
+          };
+          return row;
+        },
         mvpSaveJob: payload => {
           let row = jobs.find(item => item.vaga_id === payload.vaga_id);
           if (row) Object.assign(row, payload);
@@ -89,7 +105,18 @@ function mockRuntime() {
         },
         mvpUpdateIndication: (id, status, observations) => {
           const row = indications.find(item => item.indicacao_id === id);
-          row.status_indicacao = status; row.observacoes = observations; row.atualizado_em = new Date().toISOString(); return row;
+          const job = jobs.find(item => item.vaga_id === row.vaga_id);
+          const talent = talents.find(item => item.pessoa_id === row.pessoa_id);
+          row.status_indicacao = status; row.observacoes = observations; row.atualizado_em = new Date().toISOString();
+          if (status === 'Contratado') {
+            talent.status_pool = 'Contratado';
+            job.status_vaga = 'Preenchida';
+          } else if (status === 'Liberado') {
+            talent.status_pool = 'Disponível';
+            job.status_vaga = 'Aberta';
+            job.indicacoes_ativas = Math.max(0, Number(job.indicacoes_ativas || 0) - 1);
+          }
+          return { indication:row, related:[], job };
         }
       };
 
@@ -103,7 +130,7 @@ function mockRuntime() {
               if (typeof methods[property] !== 'function') throw new Error('Método mock ausente: ' + String(property));
               handlers.success(methods[property](...args));
             } catch (error) { handlers.failure(error); }
-          }, 20);
+          }, mockDelay);
         }});
       };
       window.google = { script:{} };

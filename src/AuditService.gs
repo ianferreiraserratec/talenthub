@@ -21,23 +21,42 @@ function writeAuditLog_(action, entity, entityId, field, oldValue, source, note,
 function writeEntityAudit_(action, entity, entityId, before, after, source) {
   before = before || {};
   after = after || {};
-  if (action === 'CREATE') {
-    writeAuditLog_(action, entity, entityId, '', '', source, 'Registro criado');
-    return;
-  }
-  var fields = {};
-  Object.keys(before).concat(Object.keys(after)).forEach(function (key) { fields[key] = true; });
-  var changes = 0;
-  Object.keys(fields).forEach(function (field) {
-    if (field === 'atualizado_em' || field === 'atualizado_por') return;
-    var oldValue = serializeForClient_(before[field]);
-    var newValue = serializeForClient_(after[field]);
-    if (String(oldValue == null ? '' : oldValue) !== String(newValue == null ? '' : newValue)) {
-      writeAuditLog_(action, entity, entityId, field, oldValue, source, '', newValue);
-      changes += 1;
+  try {
+    var now = nowIso_();
+    var user = currentUser_();
+    var rows = [];
+    var add = function (field, oldValue, newValue, note) {
+      rows.push({
+        audit_id: generateId_('AUD_'),
+        data_evento: now,
+        usuario: user,
+        acao: action,
+        entidade: entity,
+        entidade_id: entityId || '',
+        campo_alterado: field || '',
+        valor_anterior: oldValue == null ? '' : String(oldValue),
+        valor_novo: newValue == null ? '' : String(newValue),
+        origem: source || 'WEB_APP',
+        observacao: note || ''
+      });
+    };
+    if (action === 'CREATE') {
+      add('', '', '', 'Registro criado');
+    } else {
+      var fields = {};
+      Object.keys(before).concat(Object.keys(after)).forEach(function (key) { fields[key] = true; });
+      Object.keys(fields).forEach(function (field) {
+        if (field === 'atualizado_em' || field === 'atualizado_por') return;
+        var oldValue = serializeForClient_(before[field]);
+        var newValue = serializeForClient_(after[field]);
+        if (String(oldValue == null ? '' : oldValue) !== String(newValue == null ? '' : newValue)) add(field, oldValue, newValue, '');
+      });
+      if (!rows.length) add('', '', '', 'Nenhuma alteração material');
     }
-  });
-  if (!changes) writeAuditLog_(action, entity, entityId, '', '', source, 'Nenhuma alteração material');
+    appendObjects_('TH_AUDIT_LOGS', rows);
+  } catch (error) {
+    console.error('Falha ao gravar audit log: ' + error.message);
+  }
 }
 
 function writeEvent_(type, entity, entityId, context, description, oldStatus, newStatus, channel, notes) {

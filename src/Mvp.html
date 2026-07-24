@@ -33,7 +33,12 @@
 </div>
 
 <div class="toast-region" id="toast-region" aria-live="polite"></div>
-<div class="loading-overlay hidden" id="loading-overlay"><div class="loader"></div><span id="loading-message">Carregando…</span></div>
+<div class="loading-overlay hidden" id="loading-overlay" role="status" aria-live="polite" aria-busy="true">
+  <div class="loader"></div>
+  <span id="loading-message">Carregando…</span>
+  <small>Isso pode levar alguns segundos.</small>
+  <div class="loading-progress" aria-hidden="true"><span></span></div>
+</div>
 
 <dialog class="modal" id="talent-dialog"><form id="talent-form"><div class="modal-header"><div><p class="eyebrow">Perfil profissional</p><h2 id="talent-name">Talento</h2></div><button class="icon-button" type="button" data-close>×</button></div><div class="modal-body form-stack"><input type="hidden" name="pessoa_id"><label><span>Disponível para oportunidades</span><select name="disponivel_para_oportunidades"><option value="SIM">Sim</option><option value="NAO">Não</option></select></label><label><span>Momento profissional</span><input name="momento_profissional"></label><label><span>Área de interesse</span><input name="area_interesse_principal"></label><label><span>Senioridade</span><input name="senioridade"></label><label><span>Competências</span><textarea name="principais_competencias"></textarea></label><label><span>Observações de curadoria</span><textarea name="observacoes_curadoria"></textarea></label></div><div class="modal-footer"><button class="button button-ghost" type="button" data-close>Cancelar</button><button class="button button-primary">Salvar</button></div></form></dialog>
 
