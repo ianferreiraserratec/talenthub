@@ -143,7 +143,10 @@ function mockRuntime() {
           return item;
         },
         getRuntimeConfig: () => ({ CDP_SPREADSHEET_ID:'configurado', TH_SPREADSHEET_ID:'configurado', ABA_CDP_PESSOAS:'PESSOAS', ABA_CDP_MATRICULAS:'MATRICULAS', DIAS_CADASTRO_VALIDO:90, TERMO_STATUS_VALIDO:'ATIVO' }),
-        getSyncStatus: () => ({ latest:[{ iniciado_em:new Date().toISOString(), tipo_sync:'PESSOAS', status:'CONCLUIDO', total_linhas_lidas:486, total_linhas_gravadas:486, mensagem:'Sincronização concluída.' }] }),
+        getSyncStatus: () => ({
+          latest:[{ iniciado_em:new Date().toISOString(), tipo_sync:'PESSOAS', status:'CONCLUIDO', total_linhas_lidas:486, total_linhas_gravadas:486, mensagem:'Sincronização concluída.' }],
+          quality:{ pessoas_sincronizadas:486, pessoas_com_formacao_aprovada:312, formacoes_aprovadas:405, pessoas_com_curriculo:271 }
+        }),
         getAuditLogs: () => [{ data_evento:new Date().toISOString(), usuario:'equipe@serratec.org', acao:'SYNC', entidade:'TH_CACHE_PESSOAS', entidade_id:'SYN_PREVIEW', observacao:'486 linhas sincronizadas', origem:'INTEGRACAO' }],
         saveRuntimeConfig: payload => payload,
         setupTalentHubDatabase: () => ({ message:'Banco preparado.' }),

@@ -32,6 +32,7 @@ assert.strictEqual(context.calculateAge_('23/07/2000', new Date(2026, 6, 23)), 2
 assert.strictEqual(context.calculateAge_('24/07/2000', new Date(2026, 6, 23)), 25);
 assert.strictEqual(context.ageRangeLabel_(26), '25 a 29');
 assert.strictEqual(context.isApprovedEnrollment_({ status_aluno: 'APROVADO' }), true);
+assert.strictEqual(context.isApprovedEnrollment_({ status_aluno: 'Aprovação' }), true);
 assert.strictEqual(context.isApprovedEnrollment_({ status_aluno: 'REPROVADO', status_curso: 'CONCLUÍDO' }), false);
 assert.strictEqual(context.isApprovedEnrollment_({ status_aluno: '', status_curso: 'CONCLUÍDO' }), true);
 const approvedByPerson = context.indexApprovedEnrollmentsByPerson_([

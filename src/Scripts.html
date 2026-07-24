@@ -807,6 +807,7 @@
     const [config, status] = await Promise.all([server('getRuntimeConfig'), App.initialized ? server('getSyncStatus') : Promise.resolve({ latest: [] })]);
     fillConfigForm(config);
     renderSyncHistory(status.latest || []);
+    renderDataQuality(status.quality || {});
   }
 
   function fillConfigForm(config) {
@@ -821,6 +822,13 @@
     const body = document.getElementById('sync-table-body');
     document.getElementById('sync-empty').classList.toggle('hidden', items.length > 0);
     body.innerHTML = items.map(item => `<tr><td>${formatDateTime(item.iniciado_em)}</td><td>${escapeHtml(item.tipo_sync)}</td><td><span class="status-badge ${item.status === 'CONCLUIDO' ? 'status-positive' : item.status === 'ERRO' ? 'status-negative' : 'status-warning'}">${escapeHtml(item.status)}</span></td><td>${formatNumber(item.total_linhas_lidas)}</td><td>${formatNumber(item.total_linhas_gravadas)}</td><td>${escapeHtml(item.mensagem || '')}</td></tr>`).join('');
+  }
+
+  function renderDataQuality(quality) {
+    text('quality-people', formatNumber(quality.pessoas_sincronizadas));
+    text('quality-trained-people', formatNumber(quality.pessoas_com_formacao_aprovada));
+    text('quality-approved-enrollments', formatNumber(quality.formacoes_aprovadas));
+    text('quality-curriculum', formatNumber(quality.pessoas_com_curriculo));
   }
 
   async function loadAuditLogs() {

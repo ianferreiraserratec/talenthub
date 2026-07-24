@@ -52,7 +52,7 @@ Processos ativos: `Pré-selecionado`, `Aguardando confirmação`, `Bloqueado`, `
 
 A visão consolidada prioriza evidências já existentes no CDP antes de depender de novos campos autodeclarados:
 
-- uma matrícula é tratada como aprovada quando `status_aluno` indica aprovação, conclusão ou certificação;
+- uma matrícula é tratada como aprovada quando `status_aluno` indica aprovação, conclusão ou certificação — incluindo o valor real `Aprovação` usado atualmente na base;
 - `status_curso` só é usado como alternativa quando `status_aluno` está vazio;
 - formação, modalidade, ciclo/turma e parceiro são consolidados sem duplicidade por `pessoa_id`;
 - idade e faixa etária são calculadas a partir de `data_nascimento`;

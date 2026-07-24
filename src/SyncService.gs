@@ -264,7 +264,7 @@ function indexApprovedEnrollmentsByPerson_(enrollments) {
 function isApprovedEnrollment_(enrollment) {
   var studentStatus = normalizeText_(enrollment && enrollment.status_aluno);
   var courseStatus = normalizeText_(enrollment && enrollment.status_curso);
-  var approvedPattern = /(aprovad|concluid|certificad)/;
+  var approvedPattern = /(aprov|concluid|certificad)/;
   if (approvedPattern.test(studentStatus)) return true;
   return !studentStatus && approvedPattern.test(courseStatus);
 }
@@ -340,5 +340,15 @@ function indexLatestBy_(sheetName, keyField, dateField) {
 function getSyncStatus() {
   var rows = getSheetObjects_('TH_SYNC_LOG', { raw: true });
   rows.sort(function (a, b) { return String(b.iniciado_em || '').localeCompare(String(a.iniciado_em || '')); });
-  return serializeForClient_({ latest: rows.slice(0, 20) });
+  var dashboard = getDashboard();
+  var metrics = dashboard.metrics || {};
+  return serializeForClient_({
+    latest: rows.slice(0, 20),
+    quality: {
+      pessoas_sincronizadas: metrics.talentos_total_cache || 0,
+      pessoas_com_formacao_aprovada: metrics.talentos_com_formacao_serratec_aprovada || 0,
+      formacoes_aprovadas: metrics.total_formacoes_serratec_aprovadas || 0,
+      pessoas_com_curriculo: metrics.talentos_com_curriculo || 0
+    }
+  });
 }
