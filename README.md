@@ -2,7 +2,16 @@
 
 Web app interno para a equipe do Serratec operar o pool de talentos, clientes e vagas do Talent Hub. A aplicação roda em Google Apps Script, usa HtmlService no frontend e Google Sheets como banco operacional.
 
-## Estado atual
+## Direcionamento atual
+
+O desenvolvimento ativo acontece na branch `mvp-inicial`, com um recorte
+operacional menor: talentos, clientes, vagas, indicações manuais e auditoria.
+O contrato completo desse recorte está em [docs/MVP_INICIAL.md](docs/MVP_INICIAL.md).
+
+O código abaixo descreve o escopo mais amplo que existia em `homologacao` e
+será progressivamente substituído na branch do MVP.
+
+## Estado anterior (homologação)
 
 O núcleo operacional está implementado na branch `homologacao`:
 
@@ -43,6 +52,7 @@ Os testes não acessam Google Sheets. Eles validam sintaxe, manifesto, contratos
 ## Branches
 
 - `homologacao`: desenvolvimento e validação no Apps Script de homologação;
+- `mvp-inicial`: versão mínima em simplificação, partindo de `homologacao`;
 - `main`: versão estável, promovida por pull request.
 
 Consulte [docs/MVP_ROADMAP.md](docs/MVP_ROADMAP.md), [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md), [docs/DATA_MODEL.md](docs/DATA_MODEL.md) e [docs/OPERATING_RULES_DRAFT.md](docs/OPERATING_RULES_DRAFT.md).

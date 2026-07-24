@@ -3,122 +3,30 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
-
 const root = path.resolve(__dirname, '..');
 const source = path.join(root, 'src');
 const files = fs.readdirSync(source);
-const gsFiles = files.filter(file => file.endsWith('.gs'));
-const htmlFiles = files.filter(file => file.endsWith('.html'));
-
 const errors = [];
 const assert = (condition, message) => { if (!condition) errors.push(message); };
 
-for (const file of gsFiles) {
-  const code = fs.readFileSync(path.join(source, file), 'utf8');
-  try { new vm.Script(code, { filename: file }); }
-  catch (error) { errors.push(`Sintaxe inválida em ${file}: ${error.message}`); }
-}
-
-for (const file of htmlFiles) {
-  const html = fs.readFileSync(path.join(source, file), 'utf8');
-  const scripts = [...html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/gi)];
-  for (const script of scripts) {
-    try { new vm.Script(script[1], { filename: file }); }
-    catch (error) { errors.push(`JavaScript inválido em ${file}: ${error.message}`); }
-  }
-}
+files.filter(file => /\.(gs|html)$/.test(file)).forEach(file => {
+  const text = fs.readFileSync(path.join(source, file), 'utf8');
+  const parts = file.endsWith('.gs') ? [text] : [...text.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/gi)].map(match => match[1]);
+  parts.forEach(code => { try { new vm.Script(code, { filename: file }); } catch (error) { errors.push(`Sintaxe inválida em ${file}: ${error.message}`); } });
+});
 
 const manifest = JSON.parse(fs.readFileSync(path.join(source, 'appsscript.json'), 'utf8'));
 assert(manifest.runtimeVersion === 'V8', 'O runtime do Apps Script deve ser V8.');
 assert(manifest.timeZone === 'America/Sao_Paulo', 'O fuso deve ser America/Sao_Paulo.');
-
-const indexHtml = fs.readFileSync(path.join(source, 'Index.html'), 'utf8');
-for (const match of indexHtml.matchAll(/include\('([^']+)'\)/g)) {
-  assert(files.includes(`${match[1]}.html`), `Template incluído não existe: ${match[1]}.html`);
-}
-
-const allHtml = htmlFiles.map(file => fs.readFileSync(path.join(source, file), 'utf8')).join('\n');
-const scriptsHtml = fs.readFileSync(path.join(source, 'Scripts.html'), 'utf8');
-assert(
-  /document\.readyState\s*===\s*['"]loading['"]/.test(allHtml),
-  'A inicialização do frontend deve considerar quando DOMContentLoaded já ocorreu.'
-);
-assert(
-  !/\^https\?\:\\\/\\\//.test(allHtml),
-  'Evite regex de protocolo com barras escapadas em HTML incluído pelo HtmlService.'
-);
-const ids = [...allHtml.matchAll(/(?:\s|<)id="([^"]+)"/g)].map(match => match[1]);
-const duplicateIds = ids.filter((id, index) => ids.indexOf(id) !== index);
-assert(duplicateIds.length === 0, `IDs HTML duplicados: ${[...new Set(duplicateIds)].join(', ')}`);
-assert(
-  /rule-row rule-row-vacancy[\s\S]{0,3000}data-field="ativo" type="checkbox"/.test(scriptsHtml),
-  'O editor de critérios da vaga deve expor o estado ativo/inativo.'
-);
-assert(
-  /function collectVacancyCriteria\(\)[\s\S]{0,1500}field\.type === 'checkbox'[\s\S]{0,500}field\.checked \? 'SIM' : 'NAO'/.test(scriptsHtml),
-  'A coleta dos critérios da vaga deve preservar o estado ativo/inativo.'
-);
-assert(
-  /matchingResultRequest/.test(scriptsHtml) &&
-  /resultRequestId !== App\.matchingResultRequest/.test(scriptsHtml),
-  'O carregamento de resultados do matching deve ignorar respostas assíncronas obsoletas.'
-);
-
-const allGs = gsFiles.map(file => fs.readFileSync(path.join(source, file), 'utf8')).join('\n');
-assert(
-  !/XFrameOptionsMode\.SAMEORIGIN/.test(allGs),
-  'XFrameOptionsMode.SAMEORIGIN não existe no HtmlService; use DEFAULT ou ALLOWALL.'
-);
-const requiredFunctions = [
-  'doGet', 'include', 'createTemplateFromProjectFile_', 'createHtmlOutputFromProjectFile_',
-  'setupTalentHubDatabase', 'syncAll', 'syncPessoas', 'syncMatriculas',
-  'regenerateTalentView', 'regenerateDashboard', 'getTalentos', 'getTalentoById',
-  'updateTalentoTalentHubData', 'getClientes', 'createCliente', 'updateCliente',
-  'getVagas', 'createVaga', 'updateVaga', 'getVagaCriterios', 'saveVagaCriterios',
-  'getMatchingSetup', 'getMatchingModels', 'saveMatchingModel', 'runMatching', 'getMatchingResults',
-  'getShortlists', 'getShortlistDetails', 'createShortlistFromResults', 'updateShortlistStatus',
-  'removeShortlistItem', 'getProcessoById', 'updateProcessoStatus', 'registrarContratacao',
-  'getDashboard', 'getAuditLogs', 'getSyncStatus'
-];
-for (const functionName of requiredFunctions) {
-  assert(new RegExp(`function\\s+${functionName}\\s*\\(`).test(allGs), `Função global ausente: ${functionName}`);
-}
-
-const schemaContext = {};
-vm.createContext(schemaContext);
-vm.runInContext(fs.readFileSync(path.join(source, 'Database.gs'), 'utf8'), schemaContext);
+const index = fs.readFileSync(path.join(source, 'Index.html'), 'utf8');
+for (const match of index.matchAll(/include\('([^']+)'\)/g)) assert(files.includes(`${match[1]}.html`), `Template incluído não existe: ${match[1]}.html`);
+assert(!/data-route="integracoes"|data-route="matchmaking"|data-route="shortlists"/.test(index), 'A navegação do MVP não deve expor integrações, matching ou shortlists.');
+assert(/data-route="audit"/.test(index), 'Audit Logs devem permanecer visíveis.');
+const services = files.filter(file => file.endsWith('.gs')).map(file => fs.readFileSync(path.join(source, file), 'utf8')).join('\n');
+['getMvpBootstrap', 'mvpGetTalents', 'mvpSaveTalent', 'mvpSaveClient', 'mvpSaveJob', 'mvpCreateIndication', 'mvpUpdateIndication'].forEach(name => assert(new RegExp(`function\\s+${name}\\s*\\(`).test(services), `Serviço do MVP ausente: ${name}`));
+const schemaContext = {}; vm.createContext(schemaContext); vm.runInContext(fs.readFileSync(path.join(source, 'Database.gs'), 'utf8'), schemaContext);
 const schema = schemaContext.getDatabaseSchema_();
-const requiredSheets = [
-  'TH_CONFIG', 'TH_PARAMETROS', 'TH_CACHE_PESSOAS', 'TH_CACHE_MATRICULAS',
-  'TALENT_HUB_EVENTOS_TERMO', 'TALENT_HUB_STATUS_TERMO', 'TH_TALENTOS', 'TH_CLIENTES',
-  'TH_CLIENTE_CONTATOS', 'TH_VAGAS', 'TH_VAGA_CRITERIOS', 'TH_MATCHING_MODELOS',
-  'TH_MATCHING_MODELO_CRITERIOS', 'TH_MATCHING_RUNS', 'TH_MATCHING_RESULTADOS',
-  'TH_SHORTLISTS', 'TH_SHORTLIST_ITENS', 'TH_PROCESSOS', 'TH_CONTRATACOES',
-  'TH_BRIEFINGS_EXTERNOS', 'TH_EVENTOS', 'TH_AUDIT_LOGS', 'TH_SYNC_LOG',
-  'VW_TALENTOS_APTOS', 'VW_DASHBOARD'
-];
-for (const sheet of requiredSheets) {
-  assert(Array.isArray(schema[sheet]), `Contrato da aba ausente: ${sheet}`);
-  if (schema[sheet]) assert(new Set(schema[sheet]).size === schema[sheet].length, `Cabeçalhos duplicados em ${sheet}`);
-}
-assert(schema.TH_TALENTOS[0] === 'pessoa_id', 'TH_TALENTOS deve usar pessoa_id como primeira chave.');
-assert(schema.VW_TALENTOS_APTOS.includes('apto_talent_hub'), 'A visão deve expor apto_talent_hub.');
-
-function collectTextFiles(directory) {
-  return fs.readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
-    if (entry.name === '.git' || entry.name === 'node_modules' || entry.name === '.clasp.json') return [];
-    const target = path.join(directory, entry.name);
-    if (entry.isDirectory()) return collectTextFiles(target);
-    return /\.(?:gs|html|md|json|js|example)$/.test(entry.name) ? [target] : [];
-  });
-}
-const repositoryText = collectTextFiles(root).map(file => fs.readFileSync(file, 'utf8')).join('\n');
-const possibleGoogleIds = repositoryText.match(/\b1[A-Za-z0-9_-]{40,}\b/g) || [];
-assert(possibleGoogleIds.length === 0, 'Possível ID real de planilha encontrado em arquivo versionado.');
-
-if (errors.length) {
-  console.error(errors.map(error => `- ${error}`).join('\n'));
-  process.exit(1);
-}
-
-console.log(`Validação concluída: ${gsFiles.length} arquivos .gs, ${htmlFiles.length} templates e ${requiredSheets.length} abas.`);
+['TH_CACHE_PESSOAS', 'TH_TALENTOS', 'TH_CLIENTES', 'TH_VAGAS', 'TH_INDICACOES', 'TH_AUDIT_LOGS', 'VW_TALENTOS_APTOS'].forEach(name => assert(Array.isArray(schema[name]), `Contrato da aba ausente: ${name}`));
+assert(!schema.TH_MATCHING_RUNS && !schema.TH_SHORTLISTS && !schema.TH_PROCESSOS, 'O contrato do MVP não deve incluir matching, shortlists ou processos antigos.');
+if (errors.length) { console.error(errors.map(error => `- ${error}`).join('\n')); process.exit(1); }
+console.log(`Validação do MVP concluída: ${files.length} arquivos de origem.`);

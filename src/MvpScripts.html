@@ -1,0 +1,78 @@
+<script>
+  const App = { route: 'dashboard', talents: [], clients: [], jobs: [], indications: [] };
+  const titles = { dashboard: 'Visão geral', talentos: 'Talentos', clientes: 'Clientes', vagas: 'Vagas', indicacoes: 'Indicações', audit: 'Audit Logs' };
+  const $ = id => document.getElementById(id);
+  const server = (name, ...args) => new Promise((resolve, reject) => {
+    const runner = google.script.run.withSuccessHandler(resolve).withFailureHandler(error => reject(new Error(error.message || error)));
+    runner[name](...args);
+  });
+
+  document.addEventListener('DOMContentLoaded', init);
+  async function init() {
+    document.querySelectorAll('[data-route]').forEach(button => button.addEventListener('click', () => route(button.dataset.route)));
+    document.querySelectorAll('[data-open]').forEach(button => button.addEventListener('click', () => openDialog(button.dataset.open)));
+    document.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', () => button.closest('dialog').close()));
+    $('refresh').addEventListener('click', () => loadRoute(App.route));
+    $('talent-search').addEventListener('input', debounce(loadTalents, 250)); $('talent-status').addEventListener('change', loadTalents);
+    $('talent-form').addEventListener('submit', saveTalent); $('client-form').addEventListener('submit', saveClient); $('job-form').addEventListener('submit', saveJob); $('indication-form').addEventListener('submit', saveIndication); $('status-form').addEventListener('submit', saveStatus);
+    try {
+      busy(true, 'Carregando o Talent Hub…'); const state = await server('getMvpBootstrap');
+      if (!state.initialized) return alertGlobal('O banco ainda não foi preparado. Use o menu “Talent Hub” da planilha operacional para preparar o MVP.');
+      await loadRoute('dashboard');
+    } catch (error) { alertGlobal(error.message); } finally { busy(false); }
+  }
+
+  async function route(name) {
+    App.route = name; document.querySelectorAll('.screen').forEach(screen => screen.classList.toggle('active', screen.id === `screen-${name}`)); document.querySelectorAll('[data-route]').forEach(button => button.classList.toggle('active', button.dataset.route === name)); $('page-title').textContent = titles[name]; await loadRoute(name);
+  }
+  async function loadRoute(name) {
+    busy(true, 'Atualizando dados…');
+    try {
+      if (name === 'dashboard') return loadDashboard(); if (name === 'talentos') return loadTalents(); if (name === 'clientes') return loadClients(); if (name === 'vagas') return loadJobs(); if (name === 'indicacoes') return loadIndications(); if (name === 'audit') return loadAudit();
+    } catch (error) { toast(error.message, true); } finally { busy(false); }
+  }
+  async function loadDashboard() {
+    const data = await server('getDashboard'); const labels = { talentos_aptos: 'Talentos aptos', talentos_disponiveis: 'Disponíveis', clientes_ativos: 'Clientes ativos', vagas_abertas: 'Vagas abertas', indicacoes_ativas: 'Indicações em andamento', contratacoes: 'Contratações' };
+    $('dashboard-metrics').innerHTML = Object.entries(labels).map(([key, label]) => `<article class="metric-card"><span>${label}</span><strong>${Number(data.metrics[key] || 0).toLocaleString('pt-BR')}</strong></article>`).join('');
+  }
+  async function loadTalents() {
+    App.talents = await server('mvpGetTalents', { search: $('talent-search').value, status: $('talent-status').value });
+    $('talents-body').innerHTML = App.talents.length ? App.talents.map(row => `<tr><td><strong>${e(row.nome)}</strong><small>${e(row.email || row.email_serratec)}</small></td><td>${e(row.curso || row.ult_formacao || '—')}</td><td>${e(row.area_interesse_principal || 'Não informado')}<small>${e(row.principais_competencias || '')}</small></td><td><span class="status-badge ${statusClass(row.status_pool)}">${e(row.status_pool)}</span></td><td class="align-right"><button class="button button-ghost" onclick="editTalent('${a(row.pessoa_id)}')">Editar</button></td></tr>`).join('') : empty('Nenhum talento encontrado.');
+  }
+  async function loadClients() {
+    App.clients = await server('mvpGetClients'); $('clients-body').innerHTML = App.clients.length ? App.clients.map(row => `<tr><td><strong>${e(row.nome_empresa)}</strong><small>${e(row.cidade || '')}${row.uf ? ' / ' + e(row.uf) : ''}</small></td><td><span class="status-badge ${statusClass(row.status_cliente)}">${e(row.status_cliente)}</span></td><td>${e((row.contato_principal || {}).nome || '—')}</td><td>${row.vagas_abertas || 0}</td><td class="align-right"><button class="button button-ghost" onclick="editClient('${a(row.cliente_id)}')">Editar</button></td></tr>`).join('') : empty('Nenhum cliente cadastrado.');
+  }
+  async function loadJobs() {
+    App.jobs = await server('mvpGetJobs'); $('jobs-body').innerHTML = App.jobs.length ? App.jobs.map(row => `<tr><td><strong>${e(row.titulo_vaga)}</strong><small>${e(row.area_vaga || '')}</small></td><td>${e(row.nome_empresa)}</td><td><span class="status-badge ${statusClass(row.status_vaga)}">${e(row.status_vaga)}</span></td><td>${row.qtd_posicoes || 1}</td><td>${row.indicacoes_ativas || 0}</td><td class="align-right"><button class="button button-ghost" onclick="editJob('${a(row.vaga_id)}')">Editar</button></td></tr>`).join('') : empty('Nenhuma vaga cadastrada.');
+  }
+  async function loadIndications() {
+    App.indications = await server('mvpGetIndications'); $('indications-body').innerHTML = App.indications.length ? App.indications.map(row => `<tr><td>${e(row.nome_talento)}</td><td>${e(row.titulo_vaga)}</td><td>${e(row.nome_empresa)}</td><td><span class="status-badge ${statusClass(row.status_indicacao)}">${e(row.status_indicacao)}</span></td><td>${date(row.atualizado_em)}</td><td class="align-right">${['Contratado', 'Liberado'].includes(row.status_indicacao) ? '—' : `<button class="button button-ghost" onclick="changeStatus('${a(row.indicacao_id)}')">Atualizar</button>`}</td></tr>`).join('') : empty('Nenhuma indicação registrada.');
+  }
+  async function loadAudit() {
+    const rows = await server('getAuditLogs', { limit: 100 }); $('audit-body').innerHTML = rows.length ? rows.map(row => `<tr><td>${date(row.data_evento)}</td><td>${e(row.usuario || '—')}</td><td>${e(row.acao)}</td><td>${e(row.entidade)}</td><td>${e(row.observacao || row.campo_alterado || '—')}</td></tr>`).join('') : empty('Nenhuma alteração registrada.');
+  }
+  function openDialog(id) { if (id === 'client-dialog') reset($('client-form')); if (id === 'job-dialog') { reset($('job-form')); fillOptions('job-client', App.clients, 'cliente_id', 'nome_empresa'); } if (id === 'indication-dialog') { reset($('indication-form')); fillOptions('indication-job', App.jobs.filter(job => ['Aberta', 'Em processo'].includes(job.status_vaga)), 'vaga_id', job => `${job.titulo_vaga} · ${job.nome_empresa}`); fillOptions('indication-talent', App.talents.filter(talent => talent.apto_talent_hub === 'SIM' && talent.status_pool === 'Disponível'), 'pessoa_id', talent => `${talent.nome} · ${talent.area_interesse_principal || 'sem área'}`); } $(id).showModal(); }
+  function editTalent(id) { const row = App.talents.find(item => item.pessoa_id === id); if (!row) return; fillForm($('talent-form'), row); $('talent-name').textContent = row.nome; $('talent-dialog').showModal(); }
+  function editClient(id) { const row = App.clients.find(item => item.cliente_id === id); if (!row) return; fillForm($('client-form'), row); $('client-dialog-title').textContent = 'Editar cliente'; $('client-dialog').showModal(); }
+  function editJob(id) { const row = App.jobs.find(item => item.vaga_id === id); if (!row) return; fillOptions('job-client', App.clients, 'cliente_id', 'nome_empresa'); fillForm($('job-form'), row); $('job-dialog-title').textContent = 'Editar vaga'; $('job-dialog').showModal(); }
+  function changeStatus(id) { const row = App.indications.find(item => item.indicacao_id === id); const next = { 'Em análise': ['Enviado', 'Liberado'], Enviado: ['Entrevista', 'Liberado'], Entrevista: ['Contratado', 'Liberado'] }[row.status_indicacao] || []; $('status-dialog-title').textContent = `${row.nome_talento} · ${row.titulo_vaga}`; $('status-form').elements.indicacao_id.value = id; $('status-form').elements.observacoes.value = row.observacoes || ''; $('status-select').innerHTML = next.map(value => `<option>${value}</option>`).join(''); $('status-dialog').showModal(); }
+  async function saveTalent(event) { event.preventDefault(); await save(event.currentTarget, 'mvpSaveTalent', 'Perfil atualizado.', 'talent-dialog', ['talentos', 'dashboard']); }
+  async function saveClient(event) { event.preventDefault(); await save(event.currentTarget, 'mvpSaveClient', 'Cliente salvo.', 'client-dialog', ['clientes', 'dashboard']); }
+  async function saveJob(event) { event.preventDefault(); await save(event.currentTarget, 'mvpSaveJob', 'Vaga salva.', 'job-dialog', ['vagas', 'dashboard']); }
+  async function saveIndication(event) { event.preventDefault(); await save(event.currentTarget, 'mvpCreateIndication', 'Indicação criada.', 'indication-dialog', ['indicacoes', 'talentos', 'vagas', 'dashboard']); }
+  async function saveStatus(event) { event.preventDefault(); const form = event.currentTarget; busy(true, 'Atualizando indicação…'); try { await server('mvpUpdateIndication', form.elements.indicacao_id.value, form.elements.status_indicacao.value, form.elements.observacoes.value); form.closest('dialog').close(); toast('Indicação atualizada.'); await loadIndications(); await loadDashboard(); } catch (error) { toast(error.message, true); } finally { busy(false); } }
+  async function save(form, method, message, dialogId, refreshes) { busy(true, 'Salvando…'); try { await server(method, object(form)); $(dialogId).close(); toast(message); for (const view of refreshes) await ({ talentos: loadTalents, clientes: loadClients, vagas: loadJobs, indicacoes: loadIndications, dashboard: loadDashboard }[view])(); } catch (error) { toast(error.message, true); } finally { busy(false); } }
+  function fillOptions(id, rows, value, label) { $(id).innerHTML = `<option value="">Selecione</option>` + rows.map(row => `<option value="${a(row[value])}">${e(typeof label === 'function' ? label(row) : row[label])}</option>`).join(''); }
+  function fillForm(form, data) { [...form.elements].forEach(field => { if (field.name && data[field.name] != null) field.value = data[field.name]; }); }
+  function reset(form) { form.reset(); form.querySelectorAll('input[type=hidden]').forEach(field => field.value = ''); }
+  function object(form) { return Object.fromEntries(new FormData(form).entries()); }
+  function busy(on, message) { $('loading-overlay').classList.toggle('hidden', !on); if (message) $('loading-message').textContent = message; }
+  function toast(message, error) { const node = document.createElement('div'); node.className = 'toast' + (error ? ' error' : ''); node.textContent = message; $('toast-region').append(node); setTimeout(() => node.remove(), 4000); }
+  function alertGlobal(message) { $('global-alert').textContent = message; $('global-alert').classList.remove('hidden'); }
+  function empty(message) { return `<tr><td colspan="6" class="empty-cell">${e(message)}</td></tr>`; }
+  function statusClass(value) { value = String(value || '').toLowerCase(); return /(disponível|ativo|aberta|contratado|preenchida)/.test(value) ? 'status-positive' : /(processo|análise|enviado|entrevista)/.test(value) ? 'status-info' : /(rascunho|prospect)/.test(value) ? 'status-warning' : 'status-negative'; }
+  function date(value) { return value ? new Date(value).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—'; }
+  function e(value) { return String(value == null ? '' : value).replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char])); }
+  function a(value) { return e(value).replace(/'/g, '&#39;'); }
+  function debounce(fn, wait) { let timer; return () => { clearTimeout(timer); timer = setTimeout(fn, wait); }; }
+</script>

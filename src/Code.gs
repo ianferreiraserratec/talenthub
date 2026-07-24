@@ -9,8 +9,7 @@ function doGet() {
 
 function include(filename) {
   var allowed = [
-    'Styles', 'Scripts', 'Components', 'Dashboard', 'Talentos', 'Clientes',
-    'Vagas', 'Matchmaking', 'Shortlists', 'Integracoes', 'AuditLogs'
+    'Styles', 'Mvp', 'MvpScripts'
   ];
   if (allowed.indexOf(filename) === -1) throw new Error('Template não permitido: ' + filename);
   return createHtmlOutputFromProjectFile_(filename).getContent();

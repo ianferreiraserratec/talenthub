@@ -6,10 +6,8 @@
   "scripts": {
     "preview": "node scripts/preview-server.js",
     "validate": "node scripts/validate-project.js",
-    "test:rules": "node tests/rules.test.js",
-    "test:flow": "node tests/operational-flow.test.js",
-    "test:shortlist": "node tests/shortlist-creation.test.js",
-    "test": "npm run validate && npm run test:rules && npm run test:flow && npm run test:shortlist"
+    "test:mvp": "node tests/mvp.test.js",
+    "test": "npm run validate && npm run test:mvp"
   },
   "engines": {
     "node": ">=18"

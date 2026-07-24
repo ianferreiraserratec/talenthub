@@ -1,0 +1,46 @@
+<div class="content-area">
+  <section class="screen active" id="screen-dashboard" data-title="Visão geral">
+    <div class="page-heading"><div><p class="eyebrow">MVP inicial</p><h2>Operação em um só lugar</h2><p>Consulte a base e gerencie o serviço sem editar as abas operacionais.</p></div></div>
+    <div class="metric-grid" id="dashboard-metrics"></div>
+    <div class="panel compact-panel"><h3>Como operar</h3><p>Cadastre clientes e vagas. Depois, selecione manualmente um talento apto e disponível na tela de Indicações. As mudanças ficam registradas em Audit Logs.</p></div>
+  </section>
+
+  <section class="screen" id="screen-talentos" data-title="Talentos">
+    <div class="page-heading"><div><p class="eyebrow">Banco de talentos</p><h2>Talentos</h2><p>Dados de origem são somente leitura; a equipe atualiza o perfil profissional e a disponibilidade.</p></div></div>
+    <div class="toolbar panel compact-panel"><input id="talent-search" type="search" placeholder="Buscar por nome, e-mail, curso ou competência"><select id="talent-status"><option>Todos</option><option>Disponível</option><option>Em processo</option><option>Contratado</option><option>Inativo</option><option>Inelegível</option></select></div>
+    <div class="panel table-panel"><div class="table-wrap"><table><thead><tr><th>Talento</th><th>Formação</th><th>Perfil</th><th>Status</th><th></th></tr></thead><tbody id="talents-body"></tbody></table></div></div>
+  </section>
+
+  <section class="screen" id="screen-clientes" data-title="Clientes">
+    <div class="page-heading"><div><p class="eyebrow">Empresas</p><h2>Clientes</h2><p>Cadastre empresas e mantenha o contato responsável.</p></div><button class="button button-primary" data-open="client-dialog">+ Novo cliente</button></div>
+    <div class="panel table-panel"><div class="table-wrap"><table><thead><tr><th>Empresa</th><th>Status</th><th>Contato principal</th><th>Vagas abertas</th><th></th></tr></thead><tbody id="clients-body"></tbody></table></div></div>
+  </section>
+
+  <section class="screen" id="screen-vagas" data-title="Vagas">
+    <div class="page-heading"><div><p class="eyebrow">Oportunidades</p><h2>Vagas</h2><p>Registre somente as informações necessárias para gerir a oportunidade.</p></div><button class="button button-primary" data-open="job-dialog">+ Nova vaga</button></div>
+    <div class="panel table-panel"><div class="table-wrap"><table><thead><tr><th>Vaga</th><th>Cliente</th><th>Status</th><th>Posições</th><th>Indicações</th><th></th></tr></thead><tbody id="jobs-body"></tbody></table></div></div>
+  </section>
+
+  <section class="screen" id="screen-indicacoes" data-title="Indicações">
+    <div class="page-heading"><div><p class="eyebrow">Curadoria manual</p><h2>Indicações</h2><p>Não há ranking automático: a equipe decide quem indicar, e o sistema garante as regras.</p></div><button class="button button-primary" data-open="indication-dialog">+ Nova indicação</button></div>
+    <div class="panel table-panel"><div class="table-wrap"><table><thead><tr><th>Talento</th><th>Vaga</th><th>Cliente</th><th>Status</th><th>Atualizado</th><th></th></tr></thead><tbody id="indications-body"></tbody></table></div></div>
+  </section>
+
+  <section class="screen" id="screen-audit" data-title="Audit Logs">
+    <div class="page-heading"><div><p class="eyebrow">Rastreabilidade</p><h2>Audit Logs</h2><p>Alterações feitas pelo app ficam registradas aqui.</p></div></div>
+    <div class="panel table-panel"><div class="table-wrap"><table><thead><tr><th>Data</th><th>Usuário</th><th>Ação</th><th>Entidade</th><th>Detalhe</th></tr></thead><tbody id="audit-body"></tbody></table></div></div>
+  </section>
+</div>
+
+<div class="toast-region" id="toast-region" aria-live="polite"></div>
+<div class="loading-overlay hidden" id="loading-overlay"><div class="loader"></div><span id="loading-message">Carregando…</span></div>
+
+<dialog class="modal" id="talent-dialog"><form id="talent-form"><div class="modal-header"><div><p class="eyebrow">Perfil profissional</p><h2 id="talent-name">Talento</h2></div><button class="icon-button" type="button" data-close>×</button></div><div class="modal-body form-stack"><input type="hidden" name="pessoa_id"><label><span>Disponível para oportunidades</span><select name="disponivel_para_oportunidades"><option value="SIM">Sim</option><option value="NAO">Não</option></select></label><label><span>Momento profissional</span><input name="momento_profissional"></label><label><span>Área de interesse</span><input name="area_interesse_principal"></label><label><span>Senioridade</span><input name="senioridade"></label><label><span>Competências</span><textarea name="principais_competencias"></textarea></label><label><span>Observações de curadoria</span><textarea name="observacoes_curadoria"></textarea></label></div><div class="modal-footer"><button class="button button-ghost" type="button" data-close>Cancelar</button><button class="button button-primary">Salvar</button></div></form></dialog>
+
+<dialog class="modal" id="client-dialog"><form id="client-form"><div class="modal-header"><div><p class="eyebrow">Empresa</p><h2 id="client-dialog-title">Novo cliente</h2></div><button class="icon-button" type="button" data-close>×</button></div><div class="modal-body form-stack"><input type="hidden" name="cliente_id"><label><span>Nome da empresa *</span><input name="nome_empresa" required></label><label><span>CNPJ</span><input name="cnpj"></label><label><span>Status</span><select name="status_cliente"><option>Prospect</option><option>Ativo</option><option>Inativo</option></select></label><label><span>Setor</span><input name="setor"></label><label><span>Cidade</span><input name="cidade"></label><label><span>UF</span><input name="uf" maxlength="2"></label><label><span>Observações</span><textarea name="observacoes"></textarea></label></div><div class="modal-footer"><button class="button button-ghost" type="button" data-close>Cancelar</button><button class="button button-primary">Salvar</button></div></form></dialog>
+
+<dialog class="modal" id="job-dialog"><form id="job-form"><div class="modal-header"><div><p class="eyebrow">Oportunidade</p><h2 id="job-dialog-title">Nova vaga</h2></div><button class="icon-button" type="button" data-close>×</button></div><div class="modal-body form-stack"><input type="hidden" name="vaga_id"><label><span>Cliente *</span><select name="cliente_id" id="job-client" required></select></label><label><span>Título da vaga *</span><input name="titulo_vaga" required></label><label><span>Área</span><input name="area_vaga"></label><label><span>Senioridade</span><input name="senioridade"></label><label><span>Quantidade de posições</span><input name="qtd_posicoes" type="number" min="1" value="1"></label><label><span>Status</span><select name="status_vaga"><option>Rascunho</option><option>Aberta</option><option>Em processo</option><option>Preenchida</option><option>Encerrada</option><option>Cancelada</option></select></label><label><span>Descrição</span><textarea name="descricao_vaga"></textarea></label></div><div class="modal-footer"><button class="button button-ghost" type="button" data-close>Cancelar</button><button class="button button-primary">Salvar</button></div></form></dialog>
+
+<dialog class="modal" id="indication-dialog"><form id="indication-form"><div class="modal-header"><div><p class="eyebrow">Curadoria manual</p><h2>Nova indicação</h2></div><button class="icon-button" type="button" data-close>×</button></div><div class="modal-body form-stack"><label><span>Vaga aberta *</span><select name="vaga_id" id="indication-job" required></select></label><label><span>Talento apto e disponível *</span><select name="pessoa_id" id="indication-talent" required></select></label><label><span>Observações</span><textarea name="observacoes"></textarea></label></div><div class="modal-footer"><button class="button button-ghost" type="button" data-close>Cancelar</button><button class="button button-primary">Criar indicação</button></div></form></dialog>
+
+<dialog class="modal" id="status-dialog"><form id="status-form"><div class="modal-header"><div><p class="eyebrow">Indicação</p><h2 id="status-dialog-title">Atualizar status</h2></div><button class="icon-button" type="button" data-close>×</button></div><div class="modal-body form-stack"><input type="hidden" name="indicacao_id"><label><span>Novo status</span><select name="status_indicacao" id="status-select"></select></label><label><span>Observações</span><textarea name="observacoes"></textarea></label></div><div class="modal-footer"><button class="button button-ghost" type="button" data-close>Cancelar</button><button class="button button-primary">Atualizar</button></div></form></dialog>

@@ -9,68 +9,24 @@
   </head>
   <body>
     <div class="app-shell">
-      <aside class="sidebar" id="sidebar" aria-label="Navegação principal">
-        <div class="brand">
-          <div class="brand-mark" aria-hidden="true">TH</div>
-          <div>
-            <strong>Talent Hub</strong>
-            <span>Serratec</span>
-          </div>
-        </div>
-
+      <aside class="sidebar" aria-label="Navegação principal">
+        <div class="brand"><div class="brand-mark">TH</div><div><strong>Talent Hub</strong><span>Serratec</span></div></div>
         <nav class="nav-list">
-          <button class="nav-item active" data-route="dashboard"><span>⌂</span> Visão geral</button>
-          <button class="nav-item" data-route="talentos"><span>◎</span> Talentos</button>
-          <button class="nav-item" data-route="clientes"><span>▣</span> Clientes</button>
-          <button class="nav-item" data-route="vagas"><span>◇</span> Vagas</button>
-          <button class="nav-item" data-route="matchmaking"><span>✦</span> Matchmaking IA</button>
-          <button class="nav-item" data-route="shortlists"><span>☷</span> Shortlists</button>
+          <button class="nav-item active" data-route="dashboard">Visão geral</button>
+          <button class="nav-item" data-route="talentos">Talentos</button>
+          <button class="nav-item" data-route="clientes">Clientes</button>
+          <button class="nav-item" data-route="vagas">Vagas</button>
+          <button class="nav-item" data-route="indicacoes">Indicações</button>
+          <button class="nav-item" data-route="audit">Audit Logs</button>
         </nav>
-
-        <div class="nav-section-label">Administração</div>
-        <nav class="nav-list">
-          <button class="nav-item" data-route="integracoes"><span>↻</span> Integrações</button>
-          <button class="nav-item" data-route="audit"><span>≡</span> Audit Logs</button>
-        </nav>
-
-        <div class="sidebar-footer">
-          <span class="environment-badge">Homologação</span>
-          <small id="app-version">Carregando…</small>
-        </div>
+        <div class="sidebar-footer"><span class="environment-badge">MVP inicial</span><small>Operação interna</small></div>
       </aside>
-
       <main class="main-content">
-        <header class="topbar">
-          <button class="icon-button mobile-only" id="menu-toggle" aria-label="Abrir menu">☰</button>
-          <div>
-            <p class="eyebrow">Operação interna</p>
-            <h1 id="page-title">Visão geral</h1>
-          </div>
-          <div class="topbar-actions">
-            <button class="button button-ghost" id="refresh-current" title="Atualizar dados da tela">↻ Atualizar</button>
-            <div class="user-chip" title="Usuário conectado">
-              <span class="user-avatar" id="user-avatar">S</span>
-              <span id="active-user">Serratec</span>
-            </div>
-          </div>
-        </header>
-
+        <header class="topbar"><div><p class="eyebrow">Operação interna</p><h1 id="page-title">Visão geral</h1></div><button class="button button-ghost" id="refresh">Atualizar</button></header>
         <div class="global-alert hidden" id="global-alert" role="alert"></div>
-
-        <div class="content-area">
-          <?!= include('Dashboard'); ?>
-          <?!= include('Talentos'); ?>
-          <?!= include('Clientes'); ?>
-          <?!= include('Vagas'); ?>
-          <?!= include('Matchmaking'); ?>
-          <?!= include('Shortlists'); ?>
-          <?!= include('Integracoes'); ?>
-          <?!= include('AuditLogs'); ?>
-        </div>
+        <?!= include('Mvp'); ?>
       </main>
     </div>
-
-    <?!= include('Components'); ?>
-    <?!= include('Scripts'); ?>
+    <?!= include('MvpScripts'); ?>
   </body>
 </html>
