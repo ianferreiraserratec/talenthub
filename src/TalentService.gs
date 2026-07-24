@@ -17,7 +17,8 @@ function getTalentos(filters) {
       var haystack = normalizeText_([
         row.nome, row.email, row.email_serratec, row.cpf, row.cidade, row.uf,
         row.area_interesse_principal, row.principais_competencias, row.curso,
-        row.ult_formacao, row.senioridade
+        row.ult_formacao, row.senioridade, row.escolaridade, row.formacoes_serratec,
+        row.modalidades_serratec, row.ciclos_serratec
       ].join(' '));
       if (haystack.indexOf(search) === -1) return false;
     }
@@ -28,8 +29,20 @@ function getTalentos(filters) {
     return String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR');
   });
   var offset = (page - 1) * pageSize;
+  var listFields = [
+    'pessoa_id', 'nome', 'email', 'email_serratec', 'cidade', 'uf',
+    'curso', 'ult_formacao', 'faculdade', 'escolaridade', 'formacoes_serratec',
+    'qtd_formacoes_serratec_aprovadas', 'area_interesse_principal', 'senioridade',
+    'principais_competencias', 'apto_talent_hub', 'motivo_nao_apto', 'status_pool',
+    'curriculo_disponivel'
+  ];
+  var items = filtered.slice(offset, offset + pageSize).map(function (row) {
+    var item = {};
+    listFields.forEach(function (field) { item[field] = row[field]; });
+    return item;
+  });
   return serializeForClient_({
-    items: filtered.slice(offset, offset + pageSize),
+    items: items,
     total: filtered.length,
     page: page,
     pageSize: pageSize,

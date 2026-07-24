@@ -16,12 +16,43 @@ function getMatchingSetup(vagaId) {
     execucoes: runs.slice(0, 20),
     campos_talento: getMatchingTalentFields_(),
     tipos_regra: ['Exclusivo', 'Obrigatório', 'Prioritário', 'Desejável', 'Informativo'],
-    operadores: ['igual', 'diferente', 'contem', 'nao_contem', 'intersecao_lista', 'maior_igual', 'menor_igual', 'entre', 'vazio', 'nao_vazio']
+    operadores: ['igual', 'diferente', 'contem', 'nao_contem', 'intersecao_lista', 'maior_igual', 'menor_igual', 'entre', 'vazio', 'nao_vazio'],
+    campos_vaga: getMatchingJobFields_()
+  });
+}
+
+function getMatchingJobContext(vagaId) {
+  var selectedJobId = String(vagaId || '').trim();
+  if (!selectedJobId) {
+    return serializeForClient_({
+      vaga_id: '',
+      criterios_vaga: [],
+      execucoes: []
+    });
+  }
+  var runs = getSheetObjects_('TH_MATCHING_RUNS', { raw: true }).filter(function (run) {
+    return String(run.vaga_id || '') === selectedJobId;
+  });
+  runs.sort(function (a, b) { return String(b.executado_em || '').localeCompare(String(a.executado_em || '')); });
+  return serializeForClient_({
+    vaga_id: selectedJobId,
+    criterios_vaga: getVagaCriterios(selectedJobId),
+    execucoes: runs.slice(0, 20)
   });
 }
 
 function getMatchingTalentFields_() {
   return [
+    ['formacoes_serratec', 'Formações Serratec aprovadas', false],
+    ['modalidades_serratec', 'Modalidades de formação Serratec', false],
+    ['ciclos_serratec', 'Ciclos/turmas Serratec', false],
+    ['parceiros_formacao_serratec', 'Parceiros das formações Serratec', false],
+    ['qtd_formacoes_serratec_aprovadas', 'Quantidade de formações Serratec aprovadas', false],
+    ['possui_formacao_serratec_aprovada', 'Possui formação Serratec aprovada', false],
+    ['escolaridade', 'Escolaridade', false],
+    ['ensino_medio', 'Situação do ensino médio', false],
+    ['curso', 'Curso informado', false],
+    ['faculdade', 'Instituição de ensino', false],
     ['area_interesse_principal', 'Área principal', false],
     ['areas_interesse_secundarias', 'Áreas secundárias', false],
     ['senioridade', 'Senioridade', false],
@@ -35,13 +66,32 @@ function getMatchingTalentFields_() {
     ['disponibilidade_inicio', 'Disponibilidade de início', false],
     ['cidade', 'Cidade', false],
     ['uf', 'UF', false],
+    ['curriculo_disponivel', 'Currículo disponível', false],
     ['genero', 'Gênero', true],
     ['cor_etnia', 'Cor/etnia', true],
     ['pcd_bol', 'Pessoa com deficiência', true],
-    ['ensino_medio', 'Ensino médio', false],
-    ['curso', 'Curso', false],
+    ['idade', 'Idade', true],
+    ['faixa_etaria', 'Faixa etária', true],
+    ['nacionalidade', 'Nacionalidade', true],
+    ['sit_migratoria', 'Situação migratória', true],
     ['ult_formacao', 'Última formação', false]
   ].map(function (field) { return { valor: field[0], descricao: field[1], sensivel: field[2] ? 'SIM' : 'NAO' }; });
+}
+
+function getMatchingJobFields_() {
+  return [
+    ['area_vaga', 'Área da vaga'],
+    ['senioridade', 'Senioridade'],
+    ['modalidade', 'Modalidade'],
+    ['tipo_contratacao', 'Tipo de contratação'],
+    ['cidade', 'Cidade'],
+    ['uf', 'UF'],
+    ['cidade/uf', 'Cidade e UF'],
+    ['faixa_salarial_min/faixa_salarial_max', 'Faixa salarial'],
+    ['requisitos_obrigatorios', 'Requisitos obrigatórios mapeados'],
+    ['requisitos_desejaveis', 'Requisitos desejáveis mapeados'],
+    ['requisitos_obrigatorios/requisitos_desejaveis', 'Todos os requisitos mapeados']
+  ].map(function (field) { return { valor: field[0], descricao: field[1] }; });
 }
 
 function getMatchingModels() {
@@ -106,9 +156,17 @@ function saveMatchingModel(payload, criterios) {
   if (normalizeBoolean_(payload.normalizar_para_100) !== false && Number(payload.score_minimo_recomendado || 0) > 100) {
     throw new Error('score_minimo_recomendado não pode ultrapassar 100 em um modelo normalizado.');
   }
+  var allowedTalentFields = getMatchingTalentFields_().map(function (field) { return field.valor; });
+  var allowedJobFields = getMatchingJobFields_().map(function (field) { return field.valor; });
   criterios.forEach(function (criterion) {
     requireFields_(criterion, ['criterio_nome', 'campo_talento', 'campo_vaga', 'tipo_comparacao'], 'Critério do modelo');
     assertNonNegativeNumber_(criterion.peso, 'peso', false);
+    if (!isMappedMatchingExpression_(criterion.campo_talento, allowedTalentFields)) {
+      throw new Error('Campo de talento não mapeado para o matching: ' + criterion.campo_talento);
+    }
+    if (!isMappedMatchingExpression_(criterion.campo_vaga, allowedJobFields)) {
+      throw new Error('Campo da vaga não mapeado para o matching: ' + criterion.campo_vaga);
+    }
     if (isSensitiveMatchingField_(criterion.campo_talento)) {
       throw new Error('Dados sensíveis não podem fazer parte do modelo-base. Configure "' + criterion.criterio_nome + '" como critério explícito da vaga.');
     }
@@ -187,6 +245,16 @@ function saveMatchingModel(payload, criterios) {
     }
     writeEntityAudit_(before ? 'UPDATE' : 'CREATE', 'MATCHING_MODELO', modelId, before || {}, cleanModel, 'WEB_APP');
     return serializeForClient_({ modelo: cleanModel, criterios: cleanCriteria });
+  });
+}
+
+function isMappedMatchingExpression_(expression, allowedFields) {
+  var text = String(expression || '').trim();
+  if (!text) return false;
+  if ((allowedFields || []).indexOf(text) !== -1) return true;
+  var parts = text.split('/').map(function (part) { return part.trim(); }).filter(Boolean);
+  return parts.length > 1 && parts.every(function (part) {
+    return (allowedFields || []).indexOf(part) !== -1;
   });
 }
 
@@ -277,6 +345,8 @@ function runMatching(vagaId, qtdPerfis, modeloId) {
           score_localidade: evaluation.score_localidade,
           score_salario: evaluation.score_salario,
           score_diversidade: evaluation.score_diversidade,
+          score_formacao: evaluation.score_formacao,
+          score_escolaridade: evaluation.score_escolaridade,
           criterios_atendidos: evaluation.criterios_atendidos.join(' | '),
           criterios_nao_atendidos: evaluation.criterios_nao_atendidos.join(' | '),
           criterios_exclusao: evaluation.criterios_exclusao.join(' | '),
@@ -295,14 +365,25 @@ function runMatching(vagaId, qtdPerfis, modeloId) {
       }
 
       var eliminatedCount = evaluated.filter(function (item) { return item.eliminado; }).length;
-      updateObjectById_('TH_MATCHING_RUNS', 'run_id', runId, {
+      var runUpdate = {
         status_run: 'Concluído',
         total_talentos_eliminados: eliminatedCount,
         total_recomendados: recommendedCount
-      });
+      };
+      updateObjectById_('TH_MATCHING_RUNS', 'run_id', runId, runUpdate);
       writeAuditLog_('MATCH', 'VAGA', vagaId, '', '', 'WEB_APP', eligibleTalents.length + ' talentos avaliados; ' + recommendedCount + ' recomendados');
       writeEvent_('Matchmaking executado', 'VAGA', vagaId, { vaga_id: vagaId, cliente_id: job.cliente_id }, recommendedCount + ' talentos recomendados');
-      return getMatchingResults(runId);
+      var eligibleById = {};
+      eligibleTalents.forEach(function (talent) {
+        eligibleById[String(talent.pessoa_id || '')] = talent;
+      });
+      return serializeForClient_({
+        run: Object.assign({}, run, runUpdate),
+        vaga: job,
+        resultados: resultRows.map(function (result) {
+          return decorateMatchingResult_(result, eligibleById[String(result.pessoa_id || '')] || {});
+        })
+      });
     } catch (error) {
       updateObjectById_('TH_MATCHING_RUNS', 'run_id', runId, { status_run: 'Erro', observacoes: error.message });
       throw error;
@@ -329,17 +410,7 @@ function getMatchingResults(runId) {
   var results = getSheetObjects_('TH_MATCHING_RESULTADOS', { raw: true }).filter(function (result) {
     return String(result.run_id || '') === String(runId);
   }).map(function (result) {
-    var talent = talents[String(result.pessoa_id || '')] || {};
-    return Object.assign({}, result, {
-      nome: talent.nome || '',
-      email: talent.email || talent.email_serratec || '',
-      cidade: talent.cidade || '',
-      uf: talent.uf || '',
-      area_interesse_principal: talent.area_interesse_principal || '',
-      senioridade: talent.senioridade || '',
-      principais_competencias: talent.principais_competencias || '',
-      status_pool: talent.status_pool || ''
-    });
+    return decorateMatchingResult_(result, talents[String(result.pessoa_id || '')] || {});
   });
   results.sort(function (a, b) { return Number(a.ordem_ranking || 0) - Number(b.ordem_ranking || 0); });
   return serializeForClient_({
@@ -349,17 +420,47 @@ function getMatchingResults(runId) {
   });
 }
 
+function decorateMatchingResult_(result, talent) {
+  return Object.assign({}, result, {
+    nome: talent.nome || '',
+    email: talent.email || talent.email_serratec || '',
+    cidade: talent.cidade || '',
+    uf: talent.uf || '',
+    area_interesse_principal: talent.area_interesse_principal || '',
+    senioridade: talent.senioridade || '',
+    principais_competencias: talent.principais_competencias || '',
+    status_pool: talent.status_pool || '',
+    formacoes_serratec: talent.formacoes_serratec || '',
+    escolaridade: talent.escolaridade || '',
+    idade: talent.idade || '',
+    faixa_etaria: talent.faixa_etaria || '',
+    curriculo: talent.curriculo || '',
+    curriculo_disponivel: talent.curriculo_disponivel || ''
+  });
+}
+
 function evaluateTalentForJob_(talent, job, modelCriteria, vacancyCriteria, model) {
   var attended = [];
   var missed = [];
   var exclusions = [];
   var totalWeight = 0;
   var earned = 0;
-  var categoryScores = { area: 0, senioridade: 0, skills: 0, modalidade: 0, localidade: 0, salario: 0, diversidade: 0 };
+  var categoryScores = {
+    area: 0,
+    senioridade: 0,
+    skills: 0,
+    modalidade: 0,
+    localidade: 0,
+    salario: 0,
+    diversidade: 0,
+    formacao: 0,
+    escolaridade: 0
+  };
 
   (modelCriteria || []).forEach(function (criterion) {
     var weight = Math.max(Number(criterion.peso || 0), 0);
     var comparison = compareModelCriterion_(talent, job, criterion);
+    if (comparison.applicable === false) return;
     totalWeight += weight;
     earned += weight * comparison.ratio;
     var category = matchingCategory_(criterion.campo_talento, criterion.criterio_nome);
@@ -409,6 +510,8 @@ function evaluateTalentForJob_(talent, job, modelCriteria, vacancyCriteria, mode
     score_localidade: categoryTotal('localidade'),
     score_salario: categoryTotal('salario'),
     score_diversidade: categoryTotal('diversidade'),
+    score_formacao: categoryTotal('formacao'),
+    score_escolaridade: categoryTotal('escolaridade'),
     criterios_atendidos: attended,
     criterios_nao_atendidos: missed,
     criterios_exclusao: exclusions,
@@ -421,23 +524,26 @@ function compareModelCriterion_(talent, job, criterion) {
   if (type === 'salario_compativel') return compareSalaryRanges_(talent, job);
   var talentValue = resolveMatchingField_(talent, criterion.campo_talento);
   var jobValue = resolveMatchingField_(job, criterion.campo_vaga);
+  if (valueIsBlank_(jobValue)) return { applicable: false, matched: false, ratio: 0 };
   if (type === 'intersecao_lista') {
     var talentList = splitList_(talentValue);
     var jobList = splitList_(jobValue);
-    if (!talentList.length || !jobList.length) return { matched: false, ratio: 0 };
+    if (!jobList.length) return { applicable: false, matched: false, ratio: 0 };
+    if (!talentList.length) return { applicable: true, matched: false, ratio: 0 };
     var intersection = jobList.filter(function (expected) {
       return talentList.some(function (actual) { return actual === expected || actual.indexOf(expected) !== -1 || expected.indexOf(actual) !== -1; });
     });
     var ratio = Math.min(intersection.length / Math.max(jobList.length, 1), 1);
     if (String(criterion.campo_vaga || '') === 'cidade/uf' && intersection.length) ratio = 1;
-    return { matched: intersection.length > 0, ratio: ratio };
+    return { applicable: true, matched: intersection.length > 0, ratio: ratio };
   }
   var left = normalizeText_(talentValue);
   var right = normalizeText_(jobValue);
-  if (!left || !right) return { matched: false, ratio: 0 };
-  if (type === 'contem') return { matched: left.indexOf(right) !== -1, ratio: left.indexOf(right) !== -1 ? 1 : 0 };
+  if (!right) return { applicable: false, matched: false, ratio: 0 };
+  if (!left) return { applicable: true, matched: false, ratio: 0 };
+  if (type === 'contem') return { applicable: true, matched: left.indexOf(right) !== -1, ratio: left.indexOf(right) !== -1 ? 1 : 0 };
   var equal = left === right;
-  return { matched: equal, ratio: equal ? 1 : 0 };
+  return { applicable: true, matched: equal, ratio: equal ? 1 : 0 };
 }
 
 function compareSalaryRanges_(talent, job) {
@@ -445,14 +551,14 @@ function compareSalaryRanges_(talent, job) {
   var talentMax = parseMoney_(talent.pretensao_salarial_max);
   var jobMin = parseMoney_(job.faixa_salarial_min);
   var jobMax = parseMoney_(job.faixa_salarial_max);
-  if (talentMin === null && talentMax === null) return { matched: false, ratio: 0 };
-  if (jobMin === null && jobMax === null) return { matched: false, ratio: 0 };
+  if (jobMin === null && jobMax === null) return { applicable: false, matched: false, ratio: 0 };
+  if (talentMin === null && talentMax === null) return { applicable: true, matched: false, ratio: 0 };
   var effectiveTalentMin = talentMin === null ? 0 : talentMin;
   var effectiveTalentMax = talentMax === null ? Number.MAX_SAFE_INTEGER : talentMax;
   var effectiveJobMin = jobMin === null ? 0 : jobMin;
   var effectiveJobMax = jobMax === null ? Number.MAX_SAFE_INTEGER : jobMax;
   var overlap = effectiveTalentMin <= effectiveJobMax && effectiveJobMin <= effectiveTalentMax;
-  return { matched: overlap, ratio: overlap ? 1 : 0 };
+  return { applicable: true, matched: overlap, ratio: overlap ? 1 : 0 };
 }
 
 function resolveMatchingField_(record, expression) {
@@ -462,8 +568,10 @@ function resolveMatchingField_(record, expression) {
 }
 
 function matchingCategory_(field, name) {
-  var value = normalizeText_(String(field || '') + ' ' + String(name || ''));
+  var value = normalizeText_(String(field || '') + ' ' + String(name || '')).replace(/_/g, ' ');
   if (/(genero|etnia|pcd|divers)/.test(value)) return 'diversidade';
+  if (/(formacao serratec|formacoes serratec|modalidades serratec|ciclos serratec|parceiros formacao serratec)/.test(value)) return 'formacao';
+  if (/(escolaridade|ensino medio|curso informado|instituicao de ensino|faculdade)/.test(value)) return 'escolaridade';
   if (/(compet|skill|requisito)/.test(value)) return 'skills';
   if (/(senior)/.test(value)) return 'senioridade';
   if (/(modalidade)/.test(value)) return 'modalidade';
@@ -518,7 +626,10 @@ function evaluateVacancyCriterion_(talent, criterion) {
 }
 
 function isSensitiveMatchingField_(field) {
-  var sensitive = ['genero', 'cor_etnia', 'pcd_bol', 'data_nascimento', 'idade'];
+  var sensitive = [
+    'genero', 'cor_etnia', 'pcd_bol', 'data_nascimento', 'idade',
+    'faixa_etaria', 'nacionalidade', 'sit_migratoria'
+  ];
   return String(field || '').split('/').some(function (part) {
     return sensitive.indexOf(normalizeText_(part)) !== -1;
   });

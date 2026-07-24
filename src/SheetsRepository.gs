@@ -42,9 +42,13 @@ function objectToRow_(headers, object) {
 function getSheetObjects_(sheetName, options) {
   options = options || {};
   var sheet = getSheetOrThrow_(sheetName);
-  var headers = getHeader_(sheet);
-  if (sheet.getLastRow() <= 1 || headers.length === 0) return [];
-  var rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).getValues();
+  var lastRow = sheet.getLastRow();
+  var lastColumn = sheet.getLastColumn();
+  if (lastRow <= 1 || lastColumn < 1) return [];
+  var values = sheet.getRange(1, 1, lastRow, lastColumn).getValues();
+  var headers = values.shift().map(function (item) { return String(item || '').trim(); });
+  if (!headers.some(function (header) { return header !== ''; })) return [];
+  var rows = values;
   var objects = rowsToObjects_(headers, rows).filter(function (row) {
     return headers.some(function (header) { return !valueIsBlank_(row[header]); });
   });

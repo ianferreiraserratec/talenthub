@@ -12,6 +12,12 @@
     matchingModelCriteria: [],
     vacancyCriteria: [],
     shortlists: [],
+    talentPage: 1,
+    talentTotalPages: 1,
+    talentRequest: 0,
+    loadedAt: {},
+    routeRequest: 0,
+    busyLongTimer: null,
     currentShortlistId: '',
     currentShortlist: null,
     currentTalentId: '',
@@ -57,8 +63,10 @@
       }
 
       hideGlobalAlert();
-      await loadReferenceData();
-      await loadDashboard();
+      applyReferenceData(bootstrap.parametros || {});
+      if (bootstrap.dashboard) applyDashboardData(bootstrap.dashboard);
+      else await loadDashboard();
+      App.loadedAt.dashboard = Date.now();
     } catch (error) {
       showGlobalAlert('Não foi possível iniciar: ' + error.message);
       activateRoute('integracoes');
@@ -112,18 +120,32 @@
     document.getElementById('refresh-current').addEventListener('click', () => loadRoute(App.route, true));
   }
 
-  function activateRoute(route) {
+  function activateRoute(route, force) {
     App.route = route;
     document.querySelectorAll('.screen').forEach(screen => screen.classList.toggle('active', screen.id === 'screen-' + route));
     document.querySelectorAll('.nav-item').forEach(item => item.classList.toggle('active', item.dataset.route === route));
     const screen = document.getElementById('screen-' + route);
     document.getElementById('page-title').textContent = screen ? screen.dataset.title : 'Talent Hub';
     document.getElementById('sidebar').classList.remove('open');
-    return loadRoute(route);
+    return loadRoute(route, force);
   }
 
   async function loadRoute(route, force) {
     if (!App.initialized && route !== 'integracoes') return;
+    const cacheWindowMs = route === 'dashboard' ? 30000 : 60000;
+    if (!force && App.loadedAt[route] && Date.now() - App.loadedAt[route] < cacheWindowMs) return;
+    const requestId = ++App.routeRequest;
+    const labels = {
+      dashboard: 'Atualizando indicadores…',
+      talentos: 'Carregando banco de talentos…',
+      clientes: 'Carregando clientes…',
+      vagas: 'Carregando vagas…',
+      matchmaking: 'Preparando o matchmaking…',
+      shortlists: 'Carregando shortlists…',
+      integracoes: 'Carregando integrações…',
+      audit: 'Carregando auditoria…'
+    };
+    setBusy(true, labels[route] || 'Carregando…');
     try {
       if (route === 'dashboard') await loadDashboard();
       if (route === 'talentos') await loadTalents();
@@ -133,13 +155,21 @@
       if (route === 'shortlists') await loadShortlists();
       if (route === 'integracoes') await loadIntegrations();
       if (route === 'audit') await loadAuditLogs();
+      if (requestId === App.routeRequest) App.loadedAt[route] = Date.now();
     } catch (error) {
       notify(error.message, 'error');
+    } finally {
+      setBusy(false);
     }
   }
 
   async function loadReferenceData() {
-    App.params = await server('getParametros', ['areas_interesse', 'senioridades', 'modalidades', 'tipos_contratacao']);
+    const data = await server('getParametros', ['areas_interesse', 'senioridades', 'modalidades', 'tipos_contratacao']);
+    applyReferenceData(data);
+  }
+
+  function applyReferenceData(data) {
+    App.params = data || {};
     fillSelect('talent-area-select', App.params.areas_interesse);
     fillSelect('talent-seniority-select', App.params.senioridades);
     fillSelect('job-seniority-select', App.params.senioridades);
@@ -157,6 +187,11 @@
 
   async function loadDashboard() {
     const data = await server('getDashboard');
+    applyDashboardData(data);
+    App.loadedAt.dashboard = Date.now();
+  }
+
+  function applyDashboardData(data) {
     App.dashboard = data.metrics || {};
     const m = App.dashboard;
     text('metric-talentos-aptos', formatNumber(m.talentos_aptos));
@@ -178,15 +213,32 @@
   }
 
   async function loadTalents() {
+    const requestId = ++App.talentRequest;
     const filters = {
       search: document.getElementById('talentos-search').value,
       status: document.getElementById('talentos-status').value,
-      pageSize: 100
+      page: App.talentPage,
+      pageSize: 50
     };
-    const data = await server('getTalentos', filters);
-    App.talents = data.items || [];
-    text('talentos-count', `${formatNumber(data.total)} talento${data.total === 1 ? '' : 's'}`);
-    renderTalents(App.talents);
+    text('talentos-count', 'Carregando talentos…');
+    document.getElementById('talentos-prev-page').disabled = true;
+    document.getElementById('talentos-next-page').disabled = true;
+    try {
+      const data = await server('getTalentos', filters);
+      if (requestId !== App.talentRequest) return;
+      App.talents = data.items || [];
+      App.talentPage = Number(data.page || 1);
+      App.talentTotalPages = Number(data.totalPages || 1);
+      text('talentos-count', `${formatNumber(data.total)} talento${data.total === 1 ? '' : 's'}`);
+      text('talentos-page-label', `Página ${App.talentPage} de ${App.talentTotalPages}`);
+      renderTalents(App.talents);
+      App.loadedAt.talentos = Date.now();
+    } finally {
+      if (requestId === App.talentRequest) {
+        document.getElementById('talentos-prev-page').disabled = App.talentPage <= 1;
+        document.getElementById('talentos-next-page').disabled = App.talentPage >= App.talentTotalPages;
+      }
+    }
   }
 
   function renderTalents(items) {
@@ -196,7 +248,7 @@
     body.innerHTML = items.map(item => `
       <tr>
         <td><div class="primary-cell"><strong>${escapeHtml(item.nome || 'Sem nome')}</strong><small>${escapeHtml(item.email || item.email_serratec || item.pessoa_id)}</small></div></td>
-        <td><div class="primary-cell"><span>${escapeHtml(item.curso || item.ult_formacao || 'Não informada')}</span><small>${escapeHtml(item.faculdade || '')}</small></div></td>
+        <td><div class="primary-cell"><span>${escapeHtml(item.formacoes_serratec || item.curso || item.ult_formacao || 'Não informada')}</span><small>${escapeHtml(item.formacoes_serratec ? `${formatNumber(item.qtd_formacoes_serratec_aprovadas)} formação(ões) Serratec aprovada(s)` : (item.faculdade || item.escolaridade || ''))}</small></div></td>
         <td><div class="primary-cell"><span>${escapeHtml(item.area_interesse_principal || 'Área não informada')}</span><small>${escapeHtml(item.senioridade || item.principais_competencias || '')}</small></div></td>
         <td><span class="status-badge ${item.apto_talent_hub === 'SIM' ? 'status-positive' : 'status-negative'}">${item.apto_talent_hub === 'SIM' ? 'Apto' : eligibilityLabel(item.motivo_nao_apto)}</span></td>
         <td><span class="status-badge ${statusClass(item.status_pool)}">${escapeHtml(item.status_pool || '—')}</span></td>
@@ -219,12 +271,15 @@
           ${detailItem('E-mail', person.email || person.email_serratec)}
           ${detailItem('Telefone', person.celular)}
           ${detailItem('Localidade', [person.cidade, person.uf].filter(Boolean).join(' / '))}
+          ${detailItem('Idade / faixa etária', [person.idade ? `${person.idade} anos` : '', person.faixa_etaria].filter(Boolean).join(' · '))}
+          ${detailItem('Escolaridade', person.escolaridade || person.ult_formacao || person.ensino_medio)}
           ${detailItem('Cadastro', person.cadastro_atualizado_90d === 'SIM' ? `Válido · ${person.dias_desde_atualizacao} dias` : 'Desatualizado')}
           ${detailItem('Termo', [person.termo_status, person.termo_versao].filter(Boolean).join(' · '))}
           ${detailItem('Área / senioridade', [person.area_interesse_principal, person.senioridade].filter(Boolean).join(' · '))}
         </div>
         <div class="detail-section"><span>Competências</span><p>${escapeHtml(person.principais_competencias || 'Não informadas.')}</p></div>
-        <div class="detail-section"><span>Formações Serratec</span><p>${registrations}</p></div>
+        <div class="detail-section"><span>Formações Serratec aprovadas</span><p>${escapeHtml(person.formacoes_serratec || 'Nenhuma formação aprovada identificada.')}</p></div>
+        <div class="detail-section"><span>Histórico de matrículas</span><p>${registrations}</p></div>
         <div class="detail-section"><span>Links profissionais</span><p>${safeLink(person.linkedin, 'LinkedIn')} ${safeLink(person.curriculo, 'Currículo')}</p></div>`;
       document.getElementById('talent-detail-dialog').showModal();
     } finally {
@@ -334,7 +389,10 @@
     clearMatchingResults();
     const requestId = ++App.matchingRequest;
     const selectedBefore = vagaId || (document.getElementById('matching-job-select') || {}).value || '';
-    const setup = await server('getMatchingSetup', selectedBefore);
+    const hasBaseSetup = Boolean(App.matchingSetup && Array.isArray(App.matchingSetup.vagas));
+    const setup = hasBaseSetup && selectedBefore
+      ? Object.assign({}, App.matchingSetup, await server('getMatchingJobContext', selectedBefore))
+      : await server('getMatchingSetup', selectedBefore);
     if (requestId !== App.matchingRequest) return;
     App.matchingSetup = setup;
     const jobSelect = document.getElementById('matching-job-select');
@@ -390,10 +448,15 @@
     if (selectedModel && !isYes(selectedModel.ativo)) {
       return notify('Esse modelo está inativo. Abra “Ajustar modelo”, reative-o e salve antes de executar.', 'error');
     }
-    setBusy(true, 'Calculando aderência dos talentos…');
+    setBusy(true, 'Cruzando critérios da vaga com o pool disponível…');
     try {
       const data = await server('runMatching', jobId, profileCount, modelId);
-      await loadMatching(jobId);
+      const previousRuns = ((App.matchingSetup || {}).execucoes || []).filter(run => run.run_id !== data.run.run_id);
+      App.matchingSetup = Object.assign({}, App.matchingSetup || {}, {
+        vaga_id: jobId,
+        execucoes: [data.run].concat(previousRuns).slice(0, 20)
+      });
+      renderMatchingRuns(App.matchingSetup.execucoes);
       App.matchingResults = data;
       renderMatchingResults(data);
       notify('Matchmaking concluído.');
@@ -446,7 +509,7 @@
       return `<tr>
         <td><input class="matching-result-check" type="checkbox" value="${escapeAttr(result.resultado_id)}" ${selectable ? '' : 'disabled'} aria-label="Selecionar ${escapeAttr(result.nome)}"></td>
         <td><strong>#${formatNumber(result.ordem_ranking)}</strong></td>
-        <td><div class="primary-cell"><strong>${escapeHtml(result.nome || result.pessoa_id)}</strong><small>${escapeHtml([result.area_interesse_principal, result.senioridade, result.cidade, result.uf].filter(Boolean).join(' · '))}</small></div></td>
+        <td><div class="primary-cell"><strong>${escapeHtml(result.nome || result.pessoa_id)}</strong><small>${escapeHtml([result.formacoes_serratec, result.escolaridade, result.area_interesse_principal, result.senioridade, result.cidade, result.uf].filter(Boolean).join(' · '))}</small>${result.curriculo ? `<small>${safeLink(result.curriculo, 'Abrir currículo')}</small>` : ''}</div></td>
         <td><span class="score-pill">${Number(result.score_total || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}</span></td>
         <td><div class="criteria-text">${escapeHtml(result.justificativa || 'Sem justificativa.')}<small>${result.criterios_nao_atendidos ? `Não atende: ${escapeHtml(result.criterios_nao_atendidos)}` : ''}</small></div></td>
         <td><span class="status-badge ${excluded ? 'status-negative' : statusClass(result.status_resultado)}">${escapeHtml(statusLabel)}</span></td>
@@ -490,7 +553,7 @@
       <div class="rule-row" data-index="${index}">
         <label><span>Critério</span><input data-field="criterio_nome" value="${escapeAttr(criterion.criterio_nome || '')}" required></label>
         <label><span>Campo do talento</span><select data-field="campo_talento">${matchingTalentFieldOptions(criterion.campo_talento, false)}</select></label>
-        <label><span>Campo da vaga</span><input data-field="campo_vaga" value="${escapeAttr(criterion.campo_vaga || '')}" placeholder="area_vaga" required></label>
+        <label><span>Campo da vaga</span><select data-field="campo_vaga">${matchingJobFieldOptions(criterion.campo_vaga)}</select></label>
         <label><span>Comparação</span><select data-field="tipo_comparacao">${optionList(['igual', 'contem', 'intersecao_lista', 'salario_compativel'], criterion.tipo_comparacao)}</select></label>
         <label><span>Peso</span><input data-field="peso" type="number" min="0" value="${escapeAttr(criterion.peso == null ? 0 : criterion.peso)}"></label>
         <label class="check-field"><input data-field="ativo" type="checkbox" ${valueAsBoolean(criterion.ativo, true) ? 'checked' : ''}><span>Ativo</span></label>
@@ -558,6 +621,15 @@
       .filter(field => allowSensitive || field.sensivel !== 'SIM');
     if (selected && !fields.some(field => field.valor === selected)) {
       fields.unshift({ valor: selected, descricao: `${selected} · campo configurado`, sensivel: 'NAO' });
+    }
+    return fields
+      .map(field => `<option value="${escapeAttr(field.valor)}" ${field.valor === selected ? 'selected' : ''}>${escapeHtml(field.descricao)}</option>`).join('');
+  }
+
+  function matchingJobFieldOptions(selected) {
+    const fields = ((App.matchingSetup || {}).campos_vaga || []).slice();
+    if (selected && !fields.some(field => field.valor === selected)) {
+      fields.unshift({ valor: selected, descricao: `${selected} · configuração anterior` });
     }
     return fields
       .map(field => `<option value="${escapeAttr(field.valor)}" ${field.valor === selected ? 'selected' : ''}>${escapeHtml(field.descricao)}</option>`).join('');
@@ -766,8 +838,14 @@
   }
 
   function bindFilters() {
-    document.getElementById('talentos-search').addEventListener('input', debounce(loadTalents, 300));
-    document.getElementById('talentos-status').addEventListener('change', loadTalents);
+    document.getElementById('talentos-search').addEventListener('input', debounce(() => {
+      App.talentPage = 1;
+      loadTalents();
+    }, 500));
+    document.getElementById('talentos-status').addEventListener('change', () => {
+      App.talentPage = 1;
+      loadTalents();
+    });
     document.getElementById('clientes-search').addEventListener('input', debounce(loadClients, 300));
     document.getElementById('clientes-status').addEventListener('change', loadClients);
     document.getElementById('vagas-search').addEventListener('input', debounce(loadJobs, 300));
@@ -795,6 +873,16 @@
   function bindActions() {
     document.getElementById('new-client-button').addEventListener('click', () => openClientForm());
     document.getElementById('new-job-button').addEventListener('click', () => openJobForm());
+    document.getElementById('talentos-prev-page').addEventListener('click', () => {
+      if (App.talentPage <= 1) return;
+      App.talentPage -= 1;
+      loadTalents();
+    });
+    document.getElementById('talentos-next-page').addEventListener('click', () => {
+      if (App.talentPage >= App.talentTotalPages) return;
+      App.talentPage += 1;
+      loadTalents();
+    });
     document.getElementById('talentos-table-body').addEventListener('click', event => {
       const button = event.target.closest('button[data-id]');
       if (!button) return;
@@ -851,6 +939,79 @@
     document.getElementById('matching-add-vacancy-criterion').addEventListener('click', () => {
       App.vacancyCriteria = collectVacancyCriteria();
       App.vacancyCriteria.push({ criterio_nome: '', campo_talento: 'area_interesse_principal', tipo_regra: 'Prioritário', operador: 'igual', valor_esperado: '', peso_override: 10, ativo: 'SIM' });
+      renderVacancyCriteriaEditor();
+    });
+    document.getElementById('matching-vacancy-preset').addEventListener('change', event => {
+      const presets = {
+        formacao_serratec: {
+          criterio_nome: 'Possui formação Serratec aprovada',
+          campo_talento: 'possui_formacao_serratec_aprovada',
+          tipo_regra: 'Prioritário',
+          operador: 'igual',
+          valor_esperado: 'SIM',
+          peso_override: 15,
+          ativo: 'SIM'
+        },
+        formacao_especifica: {
+          criterio_nome: 'Formação Serratec específica',
+          campo_talento: 'formacoes_serratec',
+          tipo_regra: 'Prioritário',
+          operador: 'contem',
+          valor_esperado: '',
+          peso_override: 15,
+          ativo: 'SIM'
+        },
+        escolaridade: {
+          criterio_nome: 'Escolaridade desejada',
+          campo_talento: 'escolaridade',
+          tipo_regra: 'Desejável',
+          operador: 'contem',
+          valor_esperado: '',
+          peso_override: 10,
+          ativo: 'SIM'
+        },
+        curriculo: {
+          criterio_nome: 'Currículo disponível',
+          campo_talento: 'curriculo_disponivel',
+          tipo_regra: 'Obrigatório',
+          operador: 'igual',
+          valor_esperado: 'SIM',
+          peso_override: 0,
+          ativo: 'SIM'
+        },
+        idade: {
+          criterio_nome: 'Faixa de idade',
+          campo_talento: 'idade',
+          tipo_regra: 'Prioritário',
+          operador: 'entre',
+          valor_esperado: '18; 29',
+          peso_override: 10,
+          ativo: 'SIM'
+        },
+        mulheres: {
+          criterio_nome: 'Prioridade para mulheres',
+          campo_talento: 'genero',
+          tipo_regra: 'Prioritário',
+          operador: 'igual',
+          valor_esperado: 'Feminino',
+          peso_override: 15,
+          ativo: 'SIM'
+        },
+        pcd: {
+          criterio_nome: 'Vaga exclusiva para PcD',
+          campo_talento: 'pcd_bol',
+          tipo_regra: 'Exclusivo',
+          operador: 'igual',
+          valor_esperado: 'SIM',
+          peso_override: 0,
+          ativo: 'SIM'
+        }
+      };
+      const preset = presets[event.target.value];
+      event.target.value = '';
+      if (!preset) return;
+      App.vacancyCriteria = collectVacancyCriteria();
+      App.vacancyCriteria.push(Object.assign({}, preset));
       renderVacancyCriteriaEditor();
     });
     document.getElementById('vacancy-criteria-list').addEventListener('click', event => {
@@ -927,6 +1088,8 @@
       try {
         if (payload.vaga_id) await server('updateVaga', payload.vaga_id, payload);
         else await server('createVaga', payload);
+        App.matchingSetup = null;
+        App.loadedAt.matchmaking = 0;
         form.closest('dialog').close();
         await Promise.all([loadJobs(), loadDashboard()]);
         notify('Vaga salva com sucesso.');
@@ -945,6 +1108,7 @@
       setBusy(true, 'Salvando modelo de score…');
       try {
         await server('saveMatchingModel', payload, criteria);
+        App.matchingSetup = null;
         form.closest('dialog').close();
         clearMatchingResults();
         await loadMatching(document.getElementById('matching-job-select').value);
@@ -981,7 +1145,7 @@
         form.closest('dialog').close();
         notify('Shortlist criada com sucesso.');
         App.currentShortlistId = created.shortlist.shortlist_id;
-        await activateRoute('shortlists');
+        await activateRoute('shortlists', true);
       } catch (error) { notify(error.message, 'error'); }
       finally { setBusy(false); }
     });
@@ -1072,7 +1236,16 @@
   function setBusy(active, message) {
     App.busyCount = Math.max(0, App.busyCount + (active ? 1 : -1));
     if (active && message) text('loading-message', message);
-    document.getElementById('loading-overlay').classList.toggle('hidden', App.busyCount === 0);
+    const busy = App.busyCount > 0;
+    document.getElementById('loading-overlay').classList.toggle('hidden', !busy);
+    document.documentElement.classList.toggle('app-busy', busy);
+    if (App.busyLongTimer) clearTimeout(App.busyLongTimer);
+    App.busyLongTimer = null;
+    if (busy) {
+      App.busyLongTimer = setTimeout(() => {
+        text('loading-message', 'Ainda processando… aguarde a conclusão antes de tentar novamente.');
+      }, 7000);
+    }
   }
 
   function notify(message, type) {

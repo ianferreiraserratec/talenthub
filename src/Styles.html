@@ -104,6 +104,9 @@
   .toolbar .search-field { flex: 1; }
   .toolbar input, .toolbar select { min-height: 40px; }
   .result-count { margin-left: auto; color: var(--ink-500); font-size: 12px; white-space: nowrap; }
+  .pagination-bar { display: flex; align-items: center; justify-content: center; gap: 14px; padding: 14px 18px; border-top: 1px solid var(--line); color: var(--ink-500); font-size: 12px; }
+  .pagination-bar .button { min-height: 34px; padding: 6px 11px; }
+  button:disabled { cursor: not-allowed; opacity: .52; transform: none !important; }
   input, select, textarea { width: 100%; border: 1px solid #cfdbe2; border-radius: 9px; color: var(--ink-900); background: #fff; outline: none; transition: border-color .15s, box-shadow .15s; }
   input, select { min-height: 42px; padding: 9px 11px; }
   textarea { padding: 11px; resize: vertical; }
@@ -197,7 +200,12 @@
   .global-alert { margin: 16px 34px 0; padding: 13px 16px; border: 1px solid #f0c985; border-radius: 11px; color: #7a4a05; background: #fff7e8; font-size: 13px; }
   .loading-overlay { position: fixed; inset: 0; z-index: 100; display: grid; place-content: center; justify-items: center; gap: 13px; color: #fff; background: rgba(10,31,48,.7); backdrop-filter: blur(3px); font-weight: 700; }
   .loader { width: 34px; height: 34px; border: 3px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: spin .75s linear infinite; }
+  .loading-overlay small { color: rgba(255,255,255,.78); font-weight: 500; }
+  .loading-progress { width: min(300px, 66vw); height: 5px; overflow: hidden; border-radius: 999px; background: rgba(255,255,255,.2); }
+  .loading-progress span { display: block; width: 42%; height: 100%; border-radius: inherit; background: #79dedb; animation: loading-slide 1.25s ease-in-out infinite; }
+  .app-busy { cursor: progress; }
   @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes loading-slide { from { transform: translateX(-115%); } to { transform: translateX(340%); } }
   .toast-region { position: fixed; right: 22px; bottom: 22px; z-index: 120; display: grid; gap: 10px; }
   .toast { min-width: 280px; max-width: 440px; padding: 13px 16px; border-radius: 11px; color: #fff; background: var(--navy-900); box-shadow: 0 12px 32px rgba(0,0,0,.2); animation: toast-in .2s ease; }
   .toast.error { background: var(--danger); }

@@ -28,6 +28,19 @@ assert.strictEqual(context.normalizeBoolean_('não'), false);
 assert.strictEqual(context.daysSince_('01/07/2026', new Date(2026, 6, 22)), 21);
 assert.strictEqual(context.isDateWithinDays_('01/07/2026', 90, new Date(2026, 6, 22)), true);
 assert.strictEqual(context.isDateWithinDays_('01/01/2026', 90, new Date(2026, 6, 22)), false);
+assert.strictEqual(context.calculateAge_('23/07/2000', new Date(2026, 6, 23)), 26);
+assert.strictEqual(context.calculateAge_('24/07/2000', new Date(2026, 6, 23)), 25);
+assert.strictEqual(context.ageRangeLabel_(26), '25 a 29');
+assert.strictEqual(context.isApprovedEnrollment_({ status_aluno: 'APROVADO' }), true);
+assert.strictEqual(context.isApprovedEnrollment_({ status_aluno: 'REPROVADO', status_curso: 'CONCLUÍDO' }), false);
+assert.strictEqual(context.isApprovedEnrollment_({ status_aluno: '', status_curso: 'CONCLUÍDO' }), true);
+const approvedByPerson = context.indexApprovedEnrollmentsByPerson_([
+  { pessoa_id: 'P_001', status_aluno: 'APROVADO', modalidade: 'Software' },
+  { pessoa_id: 'P_001', status_aluno: 'REPROVADO', modalidade: 'Dados' },
+  { pessoa_id: 'P_002', status_aluno: 'CONCLUÍDO', modalidade: 'IA' }
+]);
+assert.strictEqual(approvedByPerson.P_001.length, 1);
+assert.strictEqual(approvedByPerson.P_002.length, 1);
 
 assert.strictEqual(context.derivePoolStatus_(false, {}, [], false), 'Inelegível');
 assert.strictEqual(
@@ -97,6 +110,42 @@ const priorityEvaluation = context.evaluateTalentForJob_(talent, job, modelCrite
 assert.strictEqual(priorityEvaluation.eliminado, false);
 assert.strictEqual(priorityEvaluation.score_total, 100);
 assert.strictEqual(priorityEvaluation.score_diversidade, 20);
+
+const applicableOnlyEvaluation = context.evaluateTalentForJob_(
+  talent,
+  { area_vaga: 'Dados', requisitos_obrigatorios: '' },
+  [
+    { criterio_nome: 'Área', campo_talento: 'area_interesse_principal', campo_vaga: 'area_vaga', tipo_comparacao: 'igual', peso: 50 },
+    { criterio_nome: 'Competências', campo_talento: 'principais_competencias', campo_vaga: 'requisitos_obrigatorios', tipo_comparacao: 'intersecao_lista', peso: 50 }
+  ],
+  [],
+  { normalizar_para_100: 'SIM' }
+);
+assert.strictEqual(
+  applicableOnlyEvaluation.score_total,
+  100,
+  'Campo da vaga não preenchido deve ser ignorado, não reduzir artificialmente o score.'
+);
+
+const formationEvaluation = context.evaluateTalentForJob_(
+  Object.assign({}, talent, {
+    possui_formacao_serratec_aprovada: 'SIM',
+    formacoes_serratec: 'Residência em Software · 2024.1'
+  }),
+  job,
+  [],
+  [{
+    criterio_nome: 'Formação Serratec',
+    campo_talento: 'possui_formacao_serratec_aprovada',
+    tipo_regra: 'Prioritário',
+    operador: 'igual',
+    valor_esperado: 'SIM',
+    peso_override: 20
+  }],
+  { normalizar_para_100: 'SIM' }
+);
+assert.strictEqual(formationEvaluation.score_total, 100);
+assert.strictEqual(formationEvaluation.score_formacao, 20);
 
 const exclusiveEvaluation = context.evaluateTalentForJob_(talent, job, modelCriteria, [
   { criterio_nome: 'Exclusiva PcD', campo_talento: 'pcd_bol', tipo_regra: 'Exclusivo', operador: 'igual', valor_esperado: 'SIM' }
@@ -221,7 +270,12 @@ assert.strictEqual(context.isSensitiveMatchingField_('genero'), true);
 assert.strictEqual(context.isSensitiveMatchingField_('cor_etnia'), true);
 assert.strictEqual(context.isSensitiveMatchingField_('pcd_bol'), true);
 assert.strictEqual(context.isSensitiveMatchingField_('genero/pcd_bol'), true);
+assert.strictEqual(context.isSensitiveMatchingField_('idade'), true);
+assert.strictEqual(context.isSensitiveMatchingField_('faixa_etaria'), true);
+assert.strictEqual(context.isSensitiveMatchingField_('nacionalidade'), true);
+assert.strictEqual(context.isSensitiveMatchingField_('sit_migratoria'), true);
 assert.strictEqual(context.isSensitiveMatchingField_('senioridade'), false);
+assert.strictEqual(context.matchingCategory_('qtd_formacoes_serratec_aprovadas', 'Formações'), 'formacao');
 assert.throws(() => context.saveMatchingModel({
   modelo_id: 'MOD_TESTE',
   nome_modelo: 'Modelo inválido',
@@ -237,6 +291,18 @@ assert.throws(() => context.saveMatchingModel({
 assert.strictEqual(
   Array.from(context.getMatchingTalentFields_()).some(field =>
     field.valor === 'pretensao_salarial_min/pretensao_salarial_max'
+  ),
+  true
+);
+assert.strictEqual(
+  Array.from(context.getMatchingTalentFields_()).some(field =>
+    field.valor === 'formacoes_serratec'
+  ),
+  true
+);
+assert.strictEqual(
+  Array.from(context.getMatchingJobFields_()).some(field =>
+    field.valor === 'requisitos_obrigatorios/requisitos_desejaveis'
   ),
   true
 );

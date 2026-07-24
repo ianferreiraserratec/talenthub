@@ -59,7 +59,7 @@ Chave `vaga_criterio_id`; FK `vaga_id`. Campos: `criterio_nome`, `campo_talento`
 - `TH_MATCHING_MODELOS`: `modelo_id`, `nome_modelo`, `descricao`, `ativo`, `versao`, `score_minimo_recomendado`, `normalizar_para_100` e metadados.
 - `TH_MATCHING_MODELO_CRITERIOS`: `modelo_criterio_id`, `modelo_id`, `criterio_nome`, `campo_talento`, `campo_vaga`, `tipo_comparacao`, `modo`, `peso`, `ativo`, `observacao`.
 - `TH_MATCHING_RUNS`: `run_id`, `vaga_id`, `modelo_id`, `qtd_perfis_solicitados`, `executado_em`, `executado_por`, `status_run`, totais avaliados/aptos/eliminados/recomendados e `observacoes`.
-- `TH_MATCHING_RESULTADOS`: `resultado_id`, `run_id`, `vaga_id`, `pessoa_id`, scores por dimensão, critérios atendidos/não atendidos/exclusão, `justificativa`, `recomendado`, `ordem_ranking`, `status_resultado`, `criado_em`.
+- `TH_MATCHING_RESULTADOS`: `resultado_id`, `run_id`, `vaga_id`, `pessoa_id`, scores por dimensão — incluindo formação Serratec e escolaridade —, critérios atendidos/não atendidos/exclusão, `justificativa`, `recomendado`, `ordem_ranking`, `status_resultado`, `criado_em`.
 
 ## Funil e impacto
 
@@ -74,7 +74,7 @@ Chave `vaga_criterio_id`; FK `vaga_id`. Campos: `criterio_nome`, `campo_talento`
 - `TH_EVENTOS`: evento operacional, contexto por IDs, descrição, transição de status, responsável, canal e observações.
 - `TH_AUDIT_LOGS`: `audit_id`, data, usuário, ação, entidade/ID, campo, valores anterior/novo, origem e observação.
 - `TH_SYNC_LOG`: `sync_id`, tipo, início/fim, status, contagens, mensagem e executor.
-- `VW_TALENTOS_APTOS`: junção materializada de pessoa, termo, camada profissional, aptidão e processos ativos. É a fonte da tela Talentos.
+- `VW_TALENTOS_APTOS`: junção materializada de pessoa, termo, camada profissional, aptidão, processos ativos e matrículas Serratec aprovadas. Além dos dados profissionais, deriva `idade`, `faixa_etaria`, `escolaridade`, formações/modalidades/ciclos/parceiros Serratec, quantidade de formações aprovadas e disponibilidade de currículo. É a fonte da tela Talentos e do matching.
 - `VW_DASHBOARD`: pares `indicador/valor` agrupados, descritos e datados. É a fonte dos cards.
 
 O contrato exato e executável de todos os cabeçalhos está em `src/Database.gs`; este arquivo é a referência humana.

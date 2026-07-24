@@ -23,6 +23,7 @@ function setupTalentHubDatabase() {
     });
 
     seedConfig_(spreadsheet);
+    clearRuntimeConfigCache_();
     seedParameters_();
     seedMatchingModel_();
     applyDataValidations_();

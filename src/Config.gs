@@ -4,6 +4,11 @@
  * Valores sensíveis ou específicos do ambiente devem ser gravados nas
  * Script Properties. A aba TH_CONFIG funciona como alternativa administrável.
  */
+var TH_OPERATIONAL_SPREADSHEET_CACHE_ = null;
+var TH_OPERATIONAL_SPREADSHEET_ID_CACHE_ = '';
+var TH_CONFIG_MAP_CACHE_ = null;
+var TH_CONFIG_MAP_CACHE_AT_ = 0;
+
 function getDefaultConfig_() {
   return {
     ABA_CDP_PESSOAS: 'PESSOAS',
@@ -31,11 +36,19 @@ function getAllowedConfigKeys_() {
 function getOperationalSpreadsheet_() {
   var spreadsheetId = PropertiesService.getScriptProperties().getProperty('TH_SPREADSHEET_ID');
   if (spreadsheetId) {
-    return SpreadsheetApp.openById(spreadsheetId.trim());
+    spreadsheetId = spreadsheetId.trim();
+    if (TH_OPERATIONAL_SPREADSHEET_CACHE_ && TH_OPERATIONAL_SPREADSHEET_ID_CACHE_ === spreadsheetId) {
+      return TH_OPERATIONAL_SPREADSHEET_CACHE_;
+    }
+    TH_OPERATIONAL_SPREADSHEET_CACHE_ = SpreadsheetApp.openById(spreadsheetId);
+    TH_OPERATIONAL_SPREADSHEET_ID_CACHE_ = spreadsheetId;
+    return TH_OPERATIONAL_SPREADSHEET_CACHE_;
   }
 
   var active = SpreadsheetApp.getActiveSpreadsheet();
   if (active) {
+    TH_OPERATIONAL_SPREADSHEET_CACHE_ = active;
+    TH_OPERATIONAL_SPREADSHEET_ID_CACHE_ = active.getId();
     return active;
   }
 
@@ -45,6 +58,9 @@ function getOperationalSpreadsheet_() {
 }
 
 function getConfigMap_() {
+  if (TH_CONFIG_MAP_CACHE_ && Date.now() - TH_CONFIG_MAP_CACHE_AT_ < 15000) {
+    return Object.assign({}, TH_CONFIG_MAP_CACHE_);
+  }
   var config = getDefaultConfig_();
   var scriptProperties = PropertiesService.getScriptProperties().getProperties();
   Object.keys(scriptProperties).forEach(function (key) {
@@ -70,7 +86,16 @@ function getConfigMap_() {
     // A configuração inicial pode acontecer antes da criação de TH_CONFIG.
   }
 
-  return config;
+  TH_CONFIG_MAP_CACHE_ = Object.assign({}, config);
+  TH_CONFIG_MAP_CACHE_AT_ = Date.now();
+  return Object.assign({}, config);
+}
+
+function clearRuntimeConfigCache_() {
+  TH_CONFIG_MAP_CACHE_ = null;
+  TH_CONFIG_MAP_CACHE_AT_ = 0;
+  TH_OPERATIONAL_SPREADSHEET_CACHE_ = null;
+  TH_OPERATIONAL_SPREADSHEET_ID_CACHE_ = '';
 }
 
 function getConfigValue_(key, fallback) {
@@ -118,6 +143,7 @@ function saveRuntimeConfig(payload) {
   }
 
   PropertiesService.getScriptProperties().setProperties(clean, false);
+  clearRuntimeConfigCache_();
   writeAuditLog_('UPDATE', 'CONFIG', 'RUNTIME', '', '', 'WEB_APP', 'Configuração atualizada');
   return getRuntimeConfig();
 }

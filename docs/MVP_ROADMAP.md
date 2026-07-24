@@ -73,6 +73,8 @@ Isso não impede evolução posterior. Apenas evita que itens não essenciais at
 | Contratações | Implementado | Registro, fechamento/liberação e substituição |
 | Dashboard, eventos e auditoria | Implementado | Indicadores principais e rastreabilidade |
 | Testes automatizados locais | Implementado | Regras e fluxos críticos sem acesso ao Google Sheets |
+| Dados já disponíveis no matching | Implementado | Formações aprovadas, escolaridade, idade, demografia, localização e currículo derivados na visão |
+| Desempenho e feedback de carregamento | Em validação real | Payload paginado, menos leituras/round trips, cache curto e bloqueio visual de operações |
 | Validação ponta a ponta com dados reais | Pendente | Próximo portão de qualidade |
 | Rotina operacional de entrada em produção | Pendente | Depende da homologação real |
 | Escala, alertas e recuperação | Planejado | Após o MVP operar com estabilidade |

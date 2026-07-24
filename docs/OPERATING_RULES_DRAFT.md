@@ -48,6 +48,19 @@ Processos ativos: `Pré-selecionado`, `Aguardando confirmação`, `Bloqueado`, `
 - cada execução gera registro em `TH_SYNC_LOG` e audit log;
 - sincronizar pessoas regenera aptidão e dashboard; sincronizar tudo também atualiza matrículas.
 
+### Formação Serratec e dados já disponíveis
+
+A visão consolidada prioriza evidências já existentes no CDP antes de depender de novos campos autodeclarados:
+
+- uma matrícula é tratada como aprovada quando `status_aluno` indica aprovação, conclusão ou certificação;
+- `status_curso` só é usado como alternativa quando `status_aluno` está vazio;
+- formação, modalidade, ciclo/turma e parceiro são consolidados sem duplicidade por `pessoa_id`;
+- idade e faixa etária são calculadas a partir de `data_nascimento`;
+- escolaridade combina os campos já existentes de ensino médio, curso e faculdade;
+- o currículo usado pelo app prioriza o arquivo alternativo informado no Talent Hub e, na ausência dele, usa o currículo do CDP.
+
+Esses campos são derivados durante a regeneração de `VW_TALENTOS_APTOS`. Alterações em pessoas ou matrículas exigem nova sincronização/regeneração para aparecerem no matching.
+
 ## Clientes e vagas
 
 - cliente exige `nome_empresa` e não permite duplicidade de CNPJ normalizado;
@@ -62,7 +75,19 @@ Ao mover um processo para `Bloqueado`, o sistema registra a data de início e, q
 
 ## Matchmaking
 
-O MVP usa regras configuráveis e explicáveis, sem API externa. Critérios `Exclusivo` e `Obrigatório` eliminam; `Prioritário` e `Desejável` pontuam; `Informativo` apenas aparece na justificativa. Dados sensíveis só participam quando declarados explicitamente na vaga. Alterar vaga, critérios ou modelo invalida execuções concluídas que ficaram obsoletas.
+O MVP usa regras configuráveis e explicáveis, sem API externa. Critérios `Exclusivo` e `Obrigatório` eliminam; `Prioritário` e `Desejável` pontuam; `Informativo` apenas aparece na justificativa.
+
+O dicionário de matching aceita apenas campos mapeados dos talentos e das vagas. O núcleo já contempla:
+
+- formações Serratec aprovadas, modalidade, ciclo/turma, parceiro e quantidade;
+- escolaridade, curso e faculdade;
+- área, senioridade, competências, modalidade, contratação, localidade, disponibilidade e pretensão salarial;
+- existência de currículo;
+- gênero, cor/etnia, PcD, idade/faixa etária, nacionalidade e situação migratória.
+
+Campos demográficos e demais dados sensíveis nunca entram no modelo padrão. Eles só participam quando a equipe os declara explicitamente como critério daquela vaga, permitindo prioridade ou exclusividade auditável. Requisitos técnicos em texto livre devem ser registrados como valores separados por vírgula ou quebra de linha e comparados apenas com competências mapeadas.
+
+Critérios do modelo cujo campo correspondente da vaga esteja vazio são ignorados no denominador do score. Assim, a ausência de uma informação no briefing não reduz artificialmente a nota de todos os talentos. Alterar vaga, critérios ou modelo invalida execuções concluídas que ficaram obsoletas.
 
 ## Shortlist, processo e contratação
 

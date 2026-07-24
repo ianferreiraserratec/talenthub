@@ -127,6 +127,9 @@ function regenerateTalentView_() {
   var people = getSheetObjects_('TH_CACHE_PESSOAS', { raw: true });
   var terms = indexLatestBy_('TALENT_HUB_STATUS_TERMO', 'pessoa_id', 'atualizado_em');
   var talents = indexBy_('TH_TALENTOS', 'pessoa_id');
+  var approvedEnrollmentsByPerson = indexApprovedEnrollmentsByPerson_(
+    getSheetObjects_('TH_CACHE_MATRICULAS', { raw: true })
+  );
   var processes = getSheetObjects_('TH_PROCESSOS', { raw: true });
   var hires = getSheetObjects_('TH_CONTRATACOES', { raw: true });
   var activeProcessStatuses = ['Pré-selecionado', 'Aguardando confirmação', 'Bloqueado', 'Enviado à empresa', 'Aguardando retorno', 'Entrevista', 'Proposta'];
@@ -149,6 +152,7 @@ function regenerateTalentView_() {
     var personId = String(person.pessoa_id || '').trim();
     var term = terms[personId] || {};
     var talent = talents[personId] || {};
+    var approvedEnrollments = approvedEnrollmentsByPerson[personId] || [];
     var personProcesses = processesByPerson[personId] || [];
     var updatedWithinWindow = isDateWithinDays_(person.atualizado_em, validDays);
     var termActive = normalizeText_(term.status) === validTerm;
@@ -161,6 +165,23 @@ function regenerateTalentView_() {
     var blockedUntil = personProcesses.filter(function (process) {
       return process.status_processo === 'Bloqueado' && process.data_limite_bloqueio;
     }).map(function (process) { return process.data_limite_bloqueio; }).sort().pop() || '';
+    var age = calculateAge_(person.data_nascimento);
+    var enrollmentLabels = uniqueDisplayValues_(approvedEnrollments.map(function (enrollment) {
+      return [
+        enrollment.modalidade,
+        enrollment.ciclo || enrollment.turma,
+        enrollment.parceiro
+      ].filter(function (value) { return !valueIsBlank_(value); }).join(' · ');
+    }));
+    var enrollmentModalities = uniqueDisplayValues_(approvedEnrollments.map(function (enrollment) {
+      return enrollment.modalidade;
+    }));
+    var enrollmentCycles = uniqueDisplayValues_(approvedEnrollments.map(function (enrollment) {
+      return enrollment.ciclo || enrollment.turma;
+    }));
+    var enrollmentPartners = uniqueDisplayValues_(approvedEnrollments.map(function (enrollment) {
+      return enrollment.parceiro;
+    }));
 
     return {
       pessoa_id: personId,
@@ -179,7 +200,7 @@ function regenerateTalentView_() {
       curso: person.curso,
       faculdade: person.faculdade,
       linkedin: person.linkedin,
-      curriculo: person.curriculo,
+      curriculo: talent.curriculo_alternativo_url || person.curriculo,
       atualizado_em: person.atualizado_em,
       dias_desde_atualizacao: daysSince_(person.atualizado_em),
       cadastro_atualizado_90d: updatedWithinWindow ? 'SIM' : 'NAO',
@@ -201,13 +222,84 @@ function regenerateTalentView_() {
       pretensao_salarial_max: talent.pretensao_salarial_max,
       principais_competencias: talent.principais_competencias,
       processos_ativos: personProcesses.length,
-      bloqueado_ate: blockedUntil
+      bloqueado_ate: blockedUntil,
+      data_nascimento: person.data_nascimento,
+      idade: age === null ? '' : age,
+      faixa_etaria: age === null ? '' : ageRangeLabel_(age),
+      nacionalidade: person.nacionalidade,
+      sit_migratoria: person.sit_migratoria,
+      escolaridade: uniqueDisplayValues_([
+        person.ult_formacao,
+        person.ensino_medio,
+        person.curso,
+        person.faculdade
+      ]).join(' · '),
+      formacoes_serratec: enrollmentLabels.join('; '),
+      modalidades_serratec: enrollmentModalities.join('; '),
+      ciclos_serratec: enrollmentCycles.join('; '),
+      parceiros_formacao_serratec: enrollmentPartners.join('; '),
+      qtd_formacoes_serratec_aprovadas: approvedEnrollments.length,
+      possui_formacao_serratec_aprovada: approvedEnrollments.length ? 'SIM' : 'NAO',
+      curriculo_disponivel: valueIsBlank_(person.curriculo) && valueIsBlank_(talent.curriculo_alternativo_url) ? 'NAO' : 'SIM'
     };
   });
 
   replaceSheetRows_('VW_TALENTOS_APTOS', viewRows);
   writeAuditLog_('UPDATE', 'VW_TALENTOS_APTOS', 'VIEW', '', '', 'SISTEMA', viewRows.length + ' talentos consolidados');
   return { ok: true, total: viewRows.length };
+}
+
+function indexApprovedEnrollmentsByPerson_(enrollments) {
+  var index = {};
+  (enrollments || []).forEach(function (enrollment) {
+    if (!isApprovedEnrollment_(enrollment)) return;
+    var personId = String(enrollment.pessoa_id || '').trim();
+    if (!personId) return;
+    if (!index[personId]) index[personId] = [];
+    index[personId].push(enrollment);
+  });
+  return index;
+}
+
+function isApprovedEnrollment_(enrollment) {
+  var studentStatus = normalizeText_(enrollment && enrollment.status_aluno);
+  var courseStatus = normalizeText_(enrollment && enrollment.status_curso);
+  var approvedPattern = /(aprovad|concluid|certificad)/;
+  if (approvedPattern.test(studentStatus)) return true;
+  return !studentStatus && approvedPattern.test(courseStatus);
+}
+
+function uniqueDisplayValues_(values) {
+  var seen = {};
+  return (values || []).filter(function (value) {
+    var display = String(value == null ? '' : value).trim();
+    var normalized = normalizeText_(display);
+    if (!normalized || seen[normalized]) return false;
+    seen[normalized] = true;
+    return true;
+  }).map(function (value) { return String(value).trim(); });
+}
+
+function calculateAge_(birthDate, referenceDate) {
+  var birth = parseDateValue_(birthDate);
+  if (!birth) return null;
+  var reference = referenceDate || new Date();
+  var age = reference.getFullYear() - birth.getFullYear();
+  var beforeBirthday = reference.getMonth() < birth.getMonth() ||
+    (reference.getMonth() === birth.getMonth() && reference.getDate() < birth.getDate());
+  if (beforeBirthday) age -= 1;
+  return age >= 0 && age <= 120 ? age : null;
+}
+
+function ageRangeLabel_(age) {
+  var number = Number(age);
+  if (!Number.isFinite(number)) return '';
+  if (number < 18) return 'Menor de 18';
+  if (number <= 24) return '18 a 24';
+  if (number <= 29) return '25 a 29';
+  if (number <= 39) return '30 a 39';
+  if (number <= 49) return '40 a 49';
+  return '50 ou mais';
 }
 
 function derivePoolStatus_(apt, talent, processes, hasActiveHire, notAptReason) {

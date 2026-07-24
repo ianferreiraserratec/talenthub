@@ -76,7 +76,8 @@ function getDatabaseSchema_() {
       'resultado_id', 'run_id', 'vaga_id', 'pessoa_id', 'score_total', 'score_area',
       'score_senioridade', 'score_skills', 'score_modalidade', 'score_localidade', 'score_salario',
       'score_diversidade', 'criterios_atendidos', 'criterios_nao_atendidos', 'criterios_exclusao',
-      'justificativa', 'recomendado', 'ordem_ranking', 'status_resultado', 'criado_em'
+      'justificativa', 'recomendado', 'ordem_ranking', 'status_resultado', 'criado_em',
+      'score_formacao', 'score_escolaridade'
     ],
     TH_SHORTLISTS: [
       'shortlist_id', 'vaga_id', 'cliente_id', 'rodada', 'titulo_shortlist', 'status_shortlist',
@@ -132,7 +133,11 @@ function getDatabaseSchema_() {
       'area_interesse_principal', 'areas_interesse_secundarias', 'senioridade',
       'tipo_contratacao_preferida', 'modalidade_preferida', 'regioes_interesse',
       'pretensao_salarial_min', 'pretensao_salarial_max', 'principais_competencias',
-      'processos_ativos', 'bloqueado_ate'
+      'processos_ativos', 'bloqueado_ate', 'data_nascimento', 'idade', 'faixa_etaria',
+      'nacionalidade', 'sit_migratoria', 'escolaridade', 'formacoes_serratec',
+      'modalidades_serratec', 'ciclos_serratec', 'parceiros_formacao_serratec',
+      'qtd_formacoes_serratec_aprovadas', 'possui_formacao_serratec_aprovada',
+      'curriculo_disponivel'
     ],
     VW_DASHBOARD: ['indicador', 'valor', 'grupo', 'descricao', 'atualizado_em']
   };
