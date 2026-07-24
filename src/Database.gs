@@ -65,7 +65,8 @@ function getDatabaseSchema_() {
       'termo_status', 'apto_talent_hub', 'motivo_nao_apto', 'status_pool',
       'disponivel_para_oportunidades', 'momento_profissional', 'area_interesse_principal',
       'senioridade', 'tipo_contratacao_preferida', 'modalidade_preferida',
-      'regioes_interesse', 'principais_competencias', 'processos_ativos'
+      'regioes_interesse', 'principais_competencias', 'processos_ativos',
+      'observacoes_curadoria'
     ],
     VW_DASHBOARD: ['indicador', 'valor', 'grupo', 'descricao', 'atualizado_em']
   };

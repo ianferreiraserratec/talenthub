@@ -1,8 +1,6 @@
 /**
- * Configuração de runtime do Talent Hub.
- *
- * Valores sensíveis ou específicos do ambiente devem ser gravados nas
- * Script Properties. A aba TH_CONFIG funciona como alternativa administrável.
+ * Configuração técnica do MVP. IDs e valores específicos do ambiente devem
+ * ficar em Script Properties e não são editáveis pelo web app.
  */
 var TH_OPERATIONAL_SPREADSHEET_CACHE_ = null;
 var TH_OPERATIONAL_SPREADSHEET_ID_CACHE_ = '';
@@ -15,8 +13,7 @@ function getDefaultConfig_() {
     ABA_CDP_MATRICULAS: 'MATRICULAS',
     DIAS_CADASTRO_VALIDO: '90',
     TERMO_STATUS_VALIDO: 'ATIVO',
-    TERMO_STATUS_INVALIDO: 'CANCELADO',
-    MATCHING_MODELO_PADRAO: 'MATCH_CDP_2026'
+    TERMO_STATUS_INVALIDO: 'CANCELADO'
   };
 }
 
@@ -28,16 +25,17 @@ function getAllowedConfigKeys_() {
     'ABA_CDP_MATRICULAS',
     'DIAS_CADASTRO_VALIDO',
     'TERMO_STATUS_VALIDO',
-    'TERMO_STATUS_INVALIDO',
-    'MATCHING_MODELO_PADRAO'
+    'TERMO_STATUS_INVALIDO'
   ];
 }
 
 function getOperationalSpreadsheet_() {
-  var spreadsheetId = PropertiesService.getScriptProperties().getProperty('TH_SPREADSHEET_ID');
+  var spreadsheetId = String(
+    PropertiesService.getScriptProperties().getProperty('TH_SPREADSHEET_ID') || ''
+  ).trim();
   if (spreadsheetId) {
-    spreadsheetId = spreadsheetId.trim();
-    if (TH_OPERATIONAL_SPREADSHEET_CACHE_ && TH_OPERATIONAL_SPREADSHEET_ID_CACHE_ === spreadsheetId) {
+    if (TH_OPERATIONAL_SPREADSHEET_CACHE_ &&
+      TH_OPERATIONAL_SPREADSHEET_ID_CACHE_ === spreadsheetId) {
       return TH_OPERATIONAL_SPREADSHEET_CACHE_;
     }
     TH_OPERATIONAL_SPREADSHEET_CACHE_ = SpreadsheetApp.openById(spreadsheetId);
@@ -51,10 +49,7 @@ function getOperationalSpreadsheet_() {
     TH_OPERATIONAL_SPREADSHEET_ID_CACHE_ = active.getId();
     return active;
   }
-
-  throw new Error(
-    'TH_SPREADSHEET_ID não configurado. Defina a Script Property antes de usar o web app.'
-  );
+  throw new Error('TH_SPREADSHEET_ID não configurado nas Script Properties.');
 }
 
 function getConfigMap_() {
@@ -62,28 +57,26 @@ function getConfigMap_() {
     return Object.assign({}, TH_CONFIG_MAP_CACHE_);
   }
   var config = getDefaultConfig_();
-  var scriptProperties = PropertiesService.getScriptProperties().getProperties();
-  Object.keys(scriptProperties).forEach(function (key) {
-    if (getAllowedConfigKeys_().indexOf(key) !== -1 && scriptProperties[key] !== '') {
-      config[key] = scriptProperties[key];
+  var properties = PropertiesService.getScriptProperties().getProperties();
+  getAllowedConfigKeys_().forEach(function (key) {
+    if (properties[key] !== undefined && String(properties[key]).trim() !== '') {
+      config[key] = String(properties[key]).trim();
     }
   });
 
   try {
-    var spreadsheet = getOperationalSpreadsheet_();
-    var sheet = spreadsheet.getSheetByName('TH_CONFIG');
+    var sheet = getOperationalSpreadsheet_().getSheetByName('TH_CONFIG');
     if (sheet && sheet.getLastRow() > 1) {
-      var values = sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getDisplayValues();
-      values.forEach(function (row) {
-        var key = String(row[0] || '').trim();
-        var value = String(row[1] || '').trim();
-        if (key && value && getAllowedConfigKeys_().indexOf(key) !== -1 && !scriptProperties[key]) {
-          config[key] = value;
-        }
-      });
+      sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getDisplayValues()
+        .forEach(function (row) {
+          var key = String(row[0] || '').trim();
+          var value = String(row[1] || '').trim();
+          if (key && value && getAllowedConfigKeys_().indexOf(key) !== -1 &&
+            !properties[key]) config[key] = value;
+        });
     }
   } catch (error) {
-    // A configuração inicial pode acontecer antes da criação de TH_CONFIG.
+    // O setup inicial pode ocorrer antes de TH_CONFIG existir.
   }
 
   TH_CONFIG_MAP_CACHE_ = Object.assign({}, config);
@@ -101,49 +94,4 @@ function clearRuntimeConfigCache_() {
 function getConfigValue_(key, fallback) {
   var config = getConfigMap_();
   return Object.prototype.hasOwnProperty.call(config, key) ? config[key] : fallback;
-}
-
-function getRuntimeConfig() {
-  var config = getConfigMap_();
-  var spreadsheet = null;
-  try {
-    spreadsheet = getOperationalSpreadsheet_();
-  } catch (error) {
-    // A tela de configuração ainda deve abrir quando a planilha não foi definida.
-  }
-
-  return serializeForClient_({
-    CDP_SPREADSHEET_ID: config.CDP_SPREADSHEET_ID || '',
-    TH_SPREADSHEET_ID: config.TH_SPREADSHEET_ID || (spreadsheet ? spreadsheet.getId() : ''),
-    ABA_CDP_PESSOAS: config.ABA_CDP_PESSOAS,
-    ABA_CDP_MATRICULAS: config.ABA_CDP_MATRICULAS,
-    DIAS_CADASTRO_VALIDO: Number(config.DIAS_CADASTRO_VALIDO || 90),
-    TERMO_STATUS_VALIDO: config.TERMO_STATUS_VALIDO,
-    TERMO_STATUS_INVALIDO: config.TERMO_STATUS_INVALIDO,
-    MATCHING_MODELO_PADRAO: config.MATCHING_MODELO_PADRAO
-  });
-}
-
-function saveRuntimeConfig(payload) {
-  payload = payload || {};
-  var allowed = getAllowedConfigKeys_();
-  var clean = {};
-
-  allowed.forEach(function (key) {
-    if (Object.prototype.hasOwnProperty.call(payload, key)) {
-      clean[key] = String(payload[key] == null ? '' : payload[key]).trim();
-    }
-  });
-
-  if (clean.DIAS_CADASTRO_VALIDO) {
-    var days = Number(clean.DIAS_CADASTRO_VALIDO);
-    if (!Number.isFinite(days) || days < 1 || days > 3650) {
-      throw new Error('DIAS_CADASTRO_VALIDO deve ser um número entre 1 e 3650.');
-    }
-  }
-
-  PropertiesService.getScriptProperties().setProperties(clean, false);
-  clearRuntimeConfigCache_();
-  writeAuditLog_('UPDATE', 'CONFIG', 'RUNTIME', '', '', 'WEB_APP', 'Configuração atualizada');
-  return getRuntimeConfig();
 }

@@ -1,5 +1,5 @@
 <script>
-  const App = { route: 'dashboard', talents: [], clients: [], jobs: [], indications: [] };
+  const App = { route: 'dashboard', talents: [], clients: [], jobs: [], indications: [], talentPage: 1, talentTotalPages: 1 };
   const titles = { dashboard: 'Visão geral', talentos: 'Talentos', clientes: 'Clientes', vagas: 'Vagas', indicacoes: 'Indicações', audit: 'Audit Logs' };
   const $ = id => document.getElementById(id);
   const server = (name, ...args) => new Promise((resolve, reject) => {
@@ -12,8 +12,12 @@
     document.querySelectorAll('[data-route]').forEach(button => button.addEventListener('click', () => route(button.dataset.route)));
     document.querySelectorAll('[data-open]').forEach(button => button.addEventListener('click', () => openDialog(button.dataset.open)));
     document.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', () => button.closest('dialog').close()));
+    $('menu-toggle').addEventListener('click', () => $('sidebar').classList.toggle('open'));
     $('refresh').addEventListener('click', () => loadRoute(App.route));
-    $('talent-search').addEventListener('input', debounce(loadTalents, 250)); $('talent-status').addEventListener('change', loadTalents);
+    $('talent-search').addEventListener('input', debounce(() => { App.talentPage = 1; loadTalents(); }, 250));
+    $('talent-status').addEventListener('change', () => { App.talentPage = 1; loadTalents(); });
+    $('talent-prev').addEventListener('click', () => { if (App.talentPage > 1) { App.talentPage -= 1; loadTalents(); } });
+    $('talent-next').addEventListener('click', () => { if (App.talentPage < App.talentTotalPages) { App.talentPage += 1; loadTalents(); } });
     $('talent-form').addEventListener('submit', saveTalent); $('client-form').addEventListener('submit', saveClient); $('job-form').addEventListener('submit', saveJob); $('indication-form').addEventListener('submit', saveIndication); $('status-form').addEventListener('submit', saveStatus);
     try {
       busy(true, 'Carregando o Talent Hub…'); const state = await server('getMvpBootstrap');
@@ -23,7 +27,7 @@
   }
 
   async function route(name) {
-    App.route = name; document.querySelectorAll('.screen').forEach(screen => screen.classList.toggle('active', screen.id === `screen-${name}`)); document.querySelectorAll('[data-route]').forEach(button => button.classList.toggle('active', button.dataset.route === name)); $('page-title').textContent = titles[name]; await loadRoute(name);
+    App.route = name; $('sidebar').classList.remove('open'); document.querySelectorAll('.screen').forEach(screen => screen.classList.toggle('active', screen.id === `screen-${name}`)); document.querySelectorAll('[data-route]').forEach(button => button.classList.toggle('active', button.dataset.route === name)); $('page-title').textContent = titles[name]; await loadRoute(name);
   }
   async function loadRoute(name) {
     busy(true, 'Atualizando dados…');
@@ -33,10 +37,15 @@
   }
   async function loadDashboard() {
     const data = await server('getDashboard'); const labels = { talentos_aptos: 'Talentos aptos', talentos_disponiveis: 'Disponíveis', clientes_ativos: 'Clientes ativos', vagas_abertas: 'Vagas abertas', indicacoes_ativas: 'Indicações em andamento', contratacoes: 'Contratações' };
-    $('dashboard-metrics').innerHTML = Object.entries(labels).map(([key, label]) => `<article class="metric-card"><span>${label}</span><strong>${Number(data.metrics[key] || 0).toLocaleString('pt-BR')}</strong></article>`).join('');
+    const accents = ['accent-blue', 'accent-cyan', 'accent-violet', 'accent-green'];
+    $('dashboard-metrics').innerHTML = Object.entries(labels).map(([key, label], index) => `<article class="metric-card ${accents[index % accents.length]}"><span class="metric-label">${label}</span><strong class="metric-value">${Number(data.metrics[key] || 0).toLocaleString('pt-BR')}</strong></article>`).join('');
   }
   async function loadTalents() {
-    App.talents = await server('mvpGetTalents', { search: $('talent-search').value, status: $('talent-status').value });
+    const data = await server('mvpGetTalents', { search: $('talent-search').value, status: $('talent-status').value, page: App.talentPage, pageSize: 50 });
+    App.talents = data.items; App.talentPage = data.page; App.talentTotalPages = data.totalPages;
+    $('talent-count').textContent = `${data.total.toLocaleString('pt-BR')} talentos`;
+    $('talent-page-label').textContent = `Página ${data.page} de ${data.totalPages}`;
+    $('talent-prev').disabled = data.page <= 1; $('talent-next').disabled = data.page >= data.totalPages;
     $('talents-body').innerHTML = App.talents.length ? App.talents.map(row => `<tr><td><strong>${e(row.nome)}</strong><small>${e(row.email || row.email_serratec)}</small></td><td>${e(row.curso || row.ult_formacao || '—')}</td><td>${e(row.area_interesse_principal || 'Não informado')}<small>${e(row.principais_competencias || '')}</small></td><td><span class="status-badge ${statusClass(row.status_pool)}">${e(row.status_pool)}</span></td><td class="align-right"><button class="button button-ghost" onclick="editTalent('${a(row.pessoa_id)}')">Editar</button></td></tr>`).join('') : empty('Nenhum talento encontrado.');
   }
   async function loadClients() {
@@ -51,13 +60,44 @@
   async function loadAudit() {
     const rows = await server('getAuditLogs', { limit: 100 }); $('audit-body').innerHTML = rows.length ? rows.map(row => `<tr><td>${date(row.data_evento)}</td><td>${e(row.usuario || '—')}</td><td>${e(row.acao)}</td><td>${e(row.entidade)}</td><td>${e(row.observacao || row.campo_alterado || '—')}</td></tr>`).join('') : empty('Nenhuma alteração registrada.');
   }
-  function openDialog(id) { if (id === 'client-dialog') reset($('client-form')); if (id === 'job-dialog') { reset($('job-form')); fillOptions('job-client', App.clients, 'cliente_id', 'nome_empresa'); } if (id === 'indication-dialog') { reset($('indication-form')); fillOptions('indication-job', App.jobs.filter(job => ['Aberta', 'Em processo'].includes(job.status_vaga)), 'vaga_id', job => `${job.titulo_vaga} · ${job.nome_empresa}`); fillOptions('indication-talent', App.talents.filter(talent => talent.apto_talent_hub === 'SIM' && talent.status_pool === 'Disponível'), 'pessoa_id', talent => `${talent.nome} · ${talent.area_interesse_principal || 'sem área'}`); } $(id).showModal(); }
+  async function openDialog(id) {
+    busy(true, 'Preparando formulário…');
+    try {
+      if (id === 'client-dialog') { reset($('client-form')); $('client-dialog-title').textContent = 'Novo cliente'; }
+      if (id === 'job-dialog') {
+        reset($('job-form'));
+        if (!App.clients.length) App.clients = await server('mvpGetClients');
+        fillOptions('job-client', App.clients, 'cliente_id', 'nome_empresa');
+      }
+      if (id === 'indication-dialog') {
+        reset($('indication-form'));
+        const [jobs, talents] = await Promise.all([
+          server('mvpGetJobs'),
+          server('mvpGetAvailableTalents')
+        ]);
+        App.jobs = jobs; App.talents = talents;
+        fillOptions('indication-job', App.jobs.filter(job => ['Aberta', 'Em processo'].includes(job.status_vaga)), 'vaga_id', job => `${job.titulo_vaga} · ${job.nome_empresa}`);
+        fillOptions('indication-talent', App.talents, 'pessoa_id', talent => `${talent.nome} · ${talent.area_interesse_principal || 'sem área'}`);
+      }
+      $(id).showModal();
+    } catch (error) { toast(error.message, true); }
+    finally { busy(false); }
+  }
   function editTalent(id) { const row = App.talents.find(item => item.pessoa_id === id); if (!row) return; fillForm($('talent-form'), row); $('talent-name').textContent = row.nome; $('talent-dialog').showModal(); }
-  function editClient(id) { const row = App.clients.find(item => item.cliente_id === id); if (!row) return; fillForm($('client-form'), row); $('client-dialog-title').textContent = 'Editar cliente'; $('client-dialog').showModal(); }
+  function editClient(id) { const row = App.clients.find(item => item.cliente_id === id); if (!row) return; reset($('client-form')); fillForm($('client-form'), row); const contact = row.contato_principal || {}; fillForm($('client-form'), { contato_id: contact.contato_id, contato_nome: contact.nome, contato_cargo: contact.cargo, contato_email: contact.email, contato_telefone: contact.telefone }); $('client-dialog-title').textContent = 'Editar cliente'; $('client-dialog').showModal(); }
   function editJob(id) { const row = App.jobs.find(item => item.vaga_id === id); if (!row) return; fillOptions('job-client', App.clients, 'cliente_id', 'nome_empresa'); fillForm($('job-form'), row); $('job-dialog-title').textContent = 'Editar vaga'; $('job-dialog').showModal(); }
   function changeStatus(id) { const row = App.indications.find(item => item.indicacao_id === id); const next = { 'Em análise': ['Enviado', 'Liberado'], Enviado: ['Entrevista', 'Liberado'], Entrevista: ['Contratado', 'Liberado'] }[row.status_indicacao] || []; $('status-dialog-title').textContent = `${row.nome_talento} · ${row.titulo_vaga}`; $('status-form').elements.indicacao_id.value = id; $('status-form').elements.observacoes.value = row.observacoes || ''; $('status-select').innerHTML = next.map(value => `<option>${value}</option>`).join(''); $('status-dialog').showModal(); }
   async function saveTalent(event) { event.preventDefault(); await save(event.currentTarget, 'mvpSaveTalent', 'Perfil atualizado.', 'talent-dialog', ['talentos', 'dashboard']); }
-  async function saveClient(event) { event.preventDefault(); await save(event.currentTarget, 'mvpSaveClient', 'Cliente salvo.', 'client-dialog', ['clientes', 'dashboard']); }
+  async function saveClient(event) {
+    event.preventDefault(); const form = event.currentTarget; const payload = object(form);
+    busy(true, 'Salvando cliente…');
+    try {
+      const saved = await server('mvpSaveClient', payload);
+      if (payload.contato_nome) await server('mvpSaveContact', saved.cliente_id, { contato_id: payload.contato_id, nome: payload.contato_nome, cargo: payload.contato_cargo, email: payload.contato_email, telefone: payload.contato_telefone, contato_principal: 'SIM', ativo: 'SIM' });
+      $('client-dialog').close(); toast('Cliente salvo.'); await loadClients(); await loadDashboard();
+    } catch (error) { toast(error.message, true); }
+    finally { busy(false); }
+  }
   async function saveJob(event) { event.preventDefault(); await save(event.currentTarget, 'mvpSaveJob', 'Vaga salva.', 'job-dialog', ['vagas', 'dashboard']); }
   async function saveIndication(event) { event.preventDefault(); await save(event.currentTarget, 'mvpCreateIndication', 'Indicação criada.', 'indication-dialog', ['indicacoes', 'talentos', 'vagas', 'dashboard']); }
   async function saveStatus(event) { event.preventDefault(); const form = event.currentTarget; busy(true, 'Atualizando indicação…'); try { await server('mvpUpdateIndication', form.elements.indicacao_id.value, form.elements.status_indicacao.value, form.elements.observacoes.value); form.closest('dialog').close(); toast('Indicação atualizada.'); await loadIndications(); await loadDashboard(); } catch (error) { toast(error.message, true); } finally { busy(false); } }

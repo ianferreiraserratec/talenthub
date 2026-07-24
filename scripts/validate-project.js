@@ -23,7 +23,7 @@ for (const match of index.matchAll(/include\('([^']+)'\)/g)) assert(files.includ
 assert(!/data-route="integracoes"|data-route="matchmaking"|data-route="shortlists"/.test(index), 'A navegação do MVP não deve expor integrações, matching ou shortlists.');
 assert(/data-route="audit"/.test(index), 'Audit Logs devem permanecer visíveis.');
 const services = files.filter(file => file.endsWith('.gs')).map(file => fs.readFileSync(path.join(source, file), 'utf8')).join('\n');
-['getMvpBootstrap', 'mvpGetTalents', 'mvpSaveTalent', 'mvpSaveClient', 'mvpSaveJob', 'mvpCreateIndication', 'mvpUpdateIndication'].forEach(name => assert(new RegExp(`function\\s+${name}\\s*\\(`).test(services), `Serviço do MVP ausente: ${name}`));
+['getMvpBootstrap', 'mvpGetTalents', 'mvpGetAvailableTalents', 'mvpSaveTalent', 'mvpSaveClient', 'mvpSaveJob', 'mvpCreateIndication', 'mvpUpdateIndication'].forEach(name => assert(new RegExp(`function\\s+${name}\\s*\\(`).test(services), `Serviço do MVP ausente: ${name}`));
 const schemaContext = {}; vm.createContext(schemaContext); vm.runInContext(fs.readFileSync(path.join(source, 'Database.gs'), 'utf8'), schemaContext);
 const schema = schemaContext.getDatabaseSchema_();
 ['TH_CACHE_PESSOAS', 'TH_TALENTOS', 'TH_CLIENTES', 'TH_VAGAS', 'TH_INDICACOES', 'TH_AUDIT_LOGS', 'VW_TALENTOS_APTOS'].forEach(name => assert(Array.isArray(schema[name]), `Contrato da aba ausente: ${name}`));

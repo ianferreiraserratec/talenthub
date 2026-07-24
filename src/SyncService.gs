@@ -90,7 +90,8 @@ function regenerateTalentView_() {
       momento_profissional: profile.momento_profissional, area_interesse_principal: profile.area_interesse_principal,
       senioridade: profile.senioridade, tipo_contratacao_preferida: profile.tipo_contratacao_preferida,
       modalidade_preferida: profile.modalidade_preferida, regioes_interesse: profile.regioes_interesse,
-      principais_competencias: profile.principais_competencias, processos_ativos: activeByPerson[id] || 0
+      principais_competencias: profile.principais_competencias, processos_ativos: activeByPerson[id] || 0,
+      observacoes_curadoria: profile.observacoes_curadoria
     };
   });
   replaceSheetRows_('VW_TALENTOS_APTOS', rows);

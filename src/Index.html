@@ -9,7 +9,7 @@
   </head>
   <body>
     <div class="app-shell">
-      <aside class="sidebar" aria-label="Navegação principal">
+      <aside class="sidebar" id="sidebar" aria-label="Navegação principal">
         <div class="brand"><div class="brand-mark">TH</div><div><strong>Talent Hub</strong><span>Serratec</span></div></div>
         <nav class="nav-list">
           <button class="nav-item active" data-route="dashboard">Visão geral</button>
@@ -22,7 +22,11 @@
         <div class="sidebar-footer"><span class="environment-badge">MVP inicial</span><small>Operação interna</small></div>
       </aside>
       <main class="main-content">
-        <header class="topbar"><div><p class="eyebrow">Operação interna</p><h1 id="page-title">Visão geral</h1></div><button class="button button-ghost" id="refresh">Atualizar</button></header>
+        <header class="topbar">
+          <button class="icon-button mobile-only" id="menu-toggle" aria-label="Abrir menu">☰</button>
+          <div><p class="eyebrow">Operação interna</p><h1 id="page-title">Visão geral</h1></div>
+          <button class="button button-ghost" id="refresh">Atualizar</button>
+        </header>
         <div class="global-alert hidden" id="global-alert" role="alert"></div>
         <?!= include('Mvp'); ?>
       </main>

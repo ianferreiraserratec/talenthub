@@ -36,23 +36,6 @@ function createHtmlOutputFromProjectFile_(filename) {
   }
 }
 
-function getAppBootstrap() {
-  var state = getDatabaseState_();
-  var payload = {
-    appName: 'Talent Hub Serratec',
-    version: '0.1.0-homologacao',
-    user: currentUser_(),
-    initialized: state.initialized,
-    missingSheets: state.missingSheets,
-    config: getRuntimeConfig()
-  };
-  if (state.initialized) {
-    payload.parametros = getParametros(['areas_interesse', 'senioridades', 'modalidades', 'tipos_contratacao']);
-    payload.dashboard = getDashboard();
-  }
-  return serializeForClient_(payload);
-}
-
 function getDatabaseState_() {
   try {
     var spreadsheet = getOperationalSpreadsheet_();

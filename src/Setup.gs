@@ -20,6 +20,7 @@ function setupTalentHubDatabase() {
     applyDataValidations_();
     formatManagedSheets_(spreadsheet, schema);
     clearRuntimeConfigCache_();
+    mvpReconcileVacancyStates_();
     regenerateTalentView_();
     regenerateDashboard_();
     writeAuditLog_('CREATE', 'DATABASE', spreadsheet.getId(), '', '', 'SETUP', 'Estrutura do MVP validada');
